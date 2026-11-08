@@ -527,6 +527,29 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     pl.appendChild(nb); pl.appendChild(rs); el.appendChild(pl); labelsEl.appendChild(el);
     s.el = el; s.sayEl = sy;
   });
+
+  /* ---- Karakter 3D Ava (Asisten Virtual) di Lobi ---- */
+  var avaLobbyChar = (function () {
+    var o = { female: true, skin: '#f0c8a0', hair: '#3a2618', style: 'long', shirt: '#1d4ed8', legs: '#2b2f3a', skirt: '#1d4ed8' };
+    var w = makeStaff(o);
+    w.root.position.set(2.2, 0.68, 11.2); w.root.rotation.y = Math.PI; scene.add(w.root);
+    // Label melayang Ava
+    var el = document.createElement('div'); el.className = 'stag'; el.style.setProperty('--sc', '#1d4ed8');
+    var sy = document.createElement('span'); sy.className = 'say'; sy.hidden = false;
+    sy.textContent = 'Klik tombol ✨ Temui Ava'; el.appendChild(sy);
+    var pl = document.createElement('div'); pl.className = 'plate';
+    var nb = document.createElement('b'); nb.textContent = 'Ava'; var rs = document.createElement('small'); rs.textContent = 'Asisten Virtual';
+    pl.appendChild(nb); pl.appendChild(rs); el.appendChild(pl); labelsEl.appendChild(el);
+    // Animasi idle Ava
+    var ph = 0;
+    return { root: w.root, head: w.head, arms: w.arms, el: el, sayEl: sy, updateTick: function (dt, now) {
+      ph += dt;
+      w.head.rotation.y = Math.sin(ph * 0.7) * 0.2;
+      w.arms[0].rotation.x = -1.1 + Math.sin(ph * 1.1) * 0.08;
+      w.arms[1].rotation.x = -1.1 + Math.cos(ph * 1.1) * 0.08;
+    }};
+  })();
+
   function staffSay(s, text, ms, now) { s.sayEl.textContent = text; s.sayEl.hidden = false; s.sayUntil = now + ms; }
   function staffStatus(s) {
     if (s.st === 'sit') return s.busy || 'Bekerja';
@@ -735,7 +758,7 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     { name: 'Mas Bayu', skin: '#f3cba8', hair: '#5b2a1e', style: 'short', shirt: '#d9534f', legs: '#2b2f3a', tie: '#1f3a68' },
     { name: 'Mbak Nia', female: true, skin: '#e9bb92', hair: '#2a1a14', style: 'pony', glasses: true, shirt: '#35a7a0', legs: '#2b2f3a', skirt: '#1f3a68' }
   ];
-  var custs = [], nextNo = 13, calledNo = 12, served = 0, MAXC = 6, QZ0 = 6.2, QDZ = 0.95, lookIx = 0, lastChip = '';
+  var custs = [], nextNo = 13, calledNo = 12, served = 0, MAXC = 0, QZ0 = 6.2, QDZ = 0.95, lookIx = 0, lastChip = '';
   var nextSpawn = performance.now() + 1500;
   var logEl = $('#logList'), chip = $('#qchip');
   function pad2(n) { return n < 10 ? '0' + n : '' + n; }
@@ -1079,7 +1102,7 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     try {
       realtimeChannel = supabase.channel('celengan-realtime-global')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, function () {
-          if (me) loadMemberData(me.id || me.uid);
+          if (me) loadMemberData(me.id || me.uid).then(function () { if (typeof avaRealtimeRefresh === 'function') avaRealtimeRefresh(); });
           if (isAdm && !apanel.hidden) aTab(atab);
           toast('Status pesanan celengan diperbarui!', 'ok');
         })
@@ -1123,6 +1146,373 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     } catch (e) {
       console.error('loadMemberData error:', e);
     }
+  }
+
+  /* ============================================================
+     ALUR MEMBER: ASISTEN VIRTUAL AVA (Pembukaan Tabungan)
+     ============================================================ */
+  var avaModal = $('#avaModal'), avaBody = $('#avaBody');
+  // State mesin Ava: 'idle' | 'profile' | 'menu' | 'teller_q1' | 'teller_q2' | 'submitting' | 'waiting' | 'rejected' | 'delivery' | 'complete'
+  var avaStep = 'idle', avaBusy = false, avaNote = '', avaOrderId = null, avaOrderData = null;
+  var avaTellerAns = { nama: '', goal: '' };
+
+  function avaClose() {
+    if (avaModal) avaModal.hidden = true;
+    avaStep = 'idle';
+  }
+
+  function renderAva() {
+    if (!avaBody) return;
+    avaBody.textContent = '';
+
+    // Header Ava
+    var hdr = E('div', { class: 'ava-header-box' }, [
+      E('div', { class: 'ava-avatar-badge', text: '✨' }),
+      E('div', {}, [
+        E('b', { text: 'Ava' }),
+        E('br'),
+        E('small', { text: 'Asisten Virtual BankVerse' })
+      ])
+    ]);
+    avaBody.appendChild(hdr);
+
+    // State: profile — cek & isi kelengkapan profil
+    if (avaStep === 'profile') {
+      avaBody.appendChild(E('div', { class: 'ava-speech-bubble', style: 'margin-top:12px', text: 'Halo! Sebelum lanjut, saya perlu melengkapi profil Anda. Mohon isi nomor HP/WA yang dapat dihubungi.' }));
+      var f = E('form', { novalidate: '', style: 'display:grid;gap:10px;margin-top:12px' });
+      f.appendChild(field('Nama Lengkap', 'text', 'ava_nama', 'name'));
+      f.appendChild(field('Nomor HP/WhatsApp', 'tel', 'ava_hp', 'tel'));
+      var sb = E('button', { type: 'submit', class: 'tool', style: 'background:var(--brand-blue);color:#fff', text: avaBusy ? 'Menyimpan...' : 'Simpan & Lanjut', disabled: avaBusy ? '' : null });
+      f.appendChild(sb);
+      f.addEventListener('submit', function (ev) { ev.preventDefault(); avaSaveProfile(); });
+      avaBody.appendChild(f);
+      if (avaNote) avaBody.appendChild(E('p', { class: 'msg err', text: avaNote }));
+      avaBody.appendChild(E('button', { type: 'button', class: 'tool', style: 'margin-top:4px', text: 'Tutup', on: { click: avaClose } }));
+      return;
+    }
+
+    // State: menu — pilih "Buat tabungan" atau "Cek status"
+    if (avaStep === 'menu') {
+      avaBody.appendChild(E('div', { class: 'ava-speech-bubble', style: 'margin-top:12px', text: 'Selamat datang, ' + (prof ? prof.displayName : '') + '! Ada yang bisa saya bantu hari ini?' }));
+      var pendingOrder = memberOrders.find(function (o) { return o.status === 'dipesan' || o.status === 'diproses' || o.status === 'dikirim' || o.status === 'ditolak'; });
+      var wrap = E('div', { style: 'display:grid;gap:8px;margin-top:14px' });
+      if (!pendingOrder) {
+        wrap.appendChild(E('button', { type: 'button', class: 'tool', style: 'background:var(--brand-blue);color:#fff', text: '🐷 Buat Tabungan Baru', on: { click: function () { avaStep = 'teller_q1'; renderAva(); flyTo([-1.75, 1.2, -2], 22, 0.6); } } }));
+      } else {
+        wrap.appendChild(E('button', { type: 'button', class: 'tool', text: '🔍 Cek Status Pengajuan', on: { click: avaCekStatus } }));
+      }
+      wrap.appendChild(E('button', { type: 'button', class: 'tool', style: 'margin-top:4px', text: 'Tutup', on: { click: avaClose } }));
+      avaBody.appendChild(wrap);
+      return;
+    }
+
+    // State: teller_q1 — tanya nama pemilik rekening
+    if (avaStep === 'teller_q1') {
+      avaBody.appendChild(E('div', { class: 'ava-speech-bubble', style: 'margin-top:12px', text: '📋 Anda sudah berada di loket Teller. Saya Ava, siap membantu membuka tabungan.\n\n👉 Pertama, siapa nama pemilik rekening/tabungan ini?' }));
+      var f1 = E('form', { novalidate: '', style: 'display:grid;gap:10px;margin-top:12px' });
+      f1.appendChild(field('Nama Pemilik Rekening', 'text', 'ava_namarek', 'name'));
+      f1.appendChild(E('button', { type: 'submit', class: 'tool', style: 'background:var(--brand-blue);color:#fff', text: 'Lanjut ➔' }));
+      f1.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var nm = (document.getElementById('ava_namarek') || {}).value || '';
+        if (nm.trim().length < 3) { avaNote = 'Nama minimal 3 karakter.'; return renderAva(); }
+        avaTellerAns.nama = nm.trim(); avaNote = '';
+        avaStep = 'teller_q2'; renderAva();
+      });
+      avaBody.appendChild(f1);
+      if (avaNote) avaBody.appendChild(E('p', { class: 'msg err', text: avaNote }));
+      avaBody.appendChild(E('button', { type: 'button', class: 'tool', style: 'margin-top:4px', text: '← Kembali', on: { click: function () { avaStep = 'menu'; renderAva(); } } }));
+      return;
+    }
+
+    // State: teller_q2 — tanya goal tabungan
+    if (avaStep === 'teller_q2') {
+      avaBody.appendChild(E('div', { class: 'ava-speech-bubble', style: 'margin-top:12px', text: '👍 Baik, nama pemilik: "' + avaTellerAns.nama + '".\n\n👉 Selanjutnya, apa goal tabungan Anda? (mis: Liburan Bali, Dana Darurat, Beli Laptop)' }));
+      var f2 = E('form', { novalidate: '', style: 'display:grid;gap:10px;margin-top:12px' });
+      f2.appendChild(field('Goal / Nama Tabungan', 'text', 'ava_goal', 'off'));
+      f2.appendChild(field('Target Nominal (Rp, opsional)', 'number', 'ava_target', 'off'));
+      f2.appendChild(E('button', { type: 'submit', class: 'tool', style: 'background:#10b981;color:#fff', text: avaBusy ? 'Mengirim...' : '✅ Kirim Pengajuan', disabled: avaBusy ? '' : null }));
+      f2.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var gl = (document.getElementById('ava_goal') || {}).value || '';
+        if (gl.trim().length < 3) { avaNote = 'Goal minimal 3 karakter.'; return renderAva(); }
+        avaTellerAns.goal = gl.trim(); avaNote = '';
+        avaSubmitOrder();
+      });
+      avaBody.appendChild(f2);
+      if (avaNote) avaBody.appendChild(E('p', { class: 'msg err', text: avaNote }));
+      avaBody.appendChild(E('button', { type: 'button', class: 'tool', style: 'margin-top:4px', text: '← Kembali', on: { click: function () { avaStep = 'teller_q1'; renderAva(); } } }));
+      return;
+    }
+
+    // State: submitting — loading
+    if (avaStep === 'submitting') {
+      avaBody.appendChild(E('div', { class: 'ava-waiting-card', style: 'margin-top:16px' }, [
+        E('div', { class: 'ava-pulse-icon', text: '⏳' }),
+        E('p', { style: 'margin-top:8px;font-weight:700', text: 'Mengirim pengajuan...' })
+      ]));
+      return;
+    }
+
+    // State: waiting — ruang tunggu, realtime refresh
+    if (avaStep === 'waiting') {
+      avaBody.appendChild(E('div', { class: 'ava-speech-bubble', style: 'margin-top:12px', text: 'Pengajuan Anda sudah masuk! 🎉 Silakan tunggu ya, Admin sedang memeriksa pengajuan Anda. Anda bisa tetap di sini atau kembali nanti setelah login.' }));
+      flyTo([0, 1.2, 7.5], 30, 0.6);
+      var wcard = E('div', { class: 'ava-waiting-card', style: 'margin-top:14px' }, [
+        E('div', { class: 'ava-pulse-icon', text: '🛋️' }),
+        E('p', { style: 'margin-top:8px;font-weight:700', text: 'Ava menunggu di ruang tunggu...' }),
+        E('p', { style: 'font-size:12px;color:var(--ink-secondary)', text: 'Status diperbarui otomatis via Realtime.' })
+      ]);
+      avaBody.appendChild(wcard);
+      avaBody.appendChild(E('div', { class: 'mrow', style: 'margin-top:14px' }, [
+        E('button', { type: 'button', class: 'tool', text: '🔍 Cek Status', on: { click: avaCekStatus } }),
+        E('button', { type: 'button', class: 'tool', text: 'Logout', on: { click: function () { avaClose(); logout(); } } })
+      ]));
+      return;
+    }
+
+    // State: rejected — ditolak
+    if (avaStep === 'rejected') {
+      var o = avaOrderData;
+      avaBody.appendChild(E('div', { class: 'ava-speech-bubble', style: 'margin-top:12px;border-color:#ef4444', text: '❌ Maaf, pengajuan tabungan Anda tidak disetujui oleh Admin.' }));
+      if (o && o.alasan_tolak) {
+        avaBody.appendChild(E('div', { class: 'order-reason', style: 'margin-top:8px', text: 'Alasan: ' + o.alasan_tolak }));
+      }
+      avaBody.appendChild(E('p', { style: 'margin-top:10px;font-size:13px', text: 'Anda dapat melengkapi profil dan mengajukan ulang.' }));
+      avaBody.appendChild(E('div', { class: 'mrow', style: 'margin-top:12px' }, [
+        E('button', { type: 'button', class: 'tool', style: 'background:var(--brand-blue);color:#fff', text: 'Lengkapi Profil & Ajukan Ulang', on: { click: function () { avaStep = 'profile'; renderAva(); } } }),
+        E('button', { type: 'button', class: 'tool', text: 'Tutup', on: { click: avaClose } })
+      ]));
+      return;
+    }
+
+    // State: delivery — celengan dikirim, tampilkan data
+    if (avaStep === 'delivery') {
+      var od = avaOrderData;
+      avaBody.appendChild(E('div', { class: 'ava-speech-bubble', style: 'margin-top:12px', text: '🎁 Celengan Anda sudah dikirim oleh Admin! Silakan konfirmasi setelah menerima fisik celengannya.' }));
+      var dl = E('dl', { class: 'kv', style: 'margin-top:12px' });
+      [
+        ['Nama Pemilik', od ? (od.nama_celengan || '-') : '-'],
+        ['Tag NFC', od ? (od.nfc_uid || '-') : '-'],
+        ['Goal', od ? (od.catatan || od.nama_celengan || '-') : '-'],
+        ['Status', 'DIKIRIM']
+      ].forEach(function (row) {
+        dl.appendChild(E('dt', { text: row[0] })); dl.appendChild(E('dd', { text: row[1] }));
+      });
+      avaBody.appendChild(dl);
+      avaBody.appendChild(E('button', { type: 'button', class: 'tool', style: 'background:#10b981;color:#fff;margin-top:14px;width:100%', text: avaBusy ? 'Mengonfirmasi...' : '✅ Konfirmasi Celengan Diterima', disabled: avaBusy ? '' : null, on: { click: avaConfirmReceived } }));
+      avaBody.appendChild(E('button', { type: 'button', class: 'tool', style: 'margin-top:6px', text: 'Tutup', on: { click: avaClose } }));
+      return;
+    }
+
+    // State: complete — selesai!
+    if (avaStep === 'complete') {
+      avaBody.appendChild(E('div', { class: 'ava-waiting-card', style: 'margin-top:12px;border-color:#10b981;background:rgba(16,185,129,0.06)' }, [
+        E('div', { class: 'ava-pulse-icon', text: '🎉' }),
+        E('p', { style: 'margin-top:8px;font-weight:800;font-size:16px', text: 'Selamat! Celengan berhasil diterima!' }),
+        E('p', { style: 'font-size:13px;color:var(--ink-secondary)', text: 'Celengan NFC Anda sudah aktif. Mulai menabung sekarang!' })
+      ]));
+      avaBody.appendChild(E('button', { type: 'button', class: 'tool', style: 'background:var(--brand-blue);color:#fff;margin-top:14px;width:100%', text: 'Lihat Celengan Saya', on: { click: function () { avaClose(); memberTab = 'celengan'; setNote(''); render(); modal.hidden = false; } } }));
+      avaBody.appendChild(E('button', { type: 'button', class: 'tool', style: 'margin-top:6px', text: 'Tutup', on: { click: avaClose } }));
+      return;
+    }
+  }
+
+  function openAvaFlow() {
+    if (!me || !prof) {
+      toast('Silakan masuk (login) terlebih dahulu.', 'warn');
+      setNote(''); render(); modal.hidden = false;
+      return;
+    }
+    // Cek profil lengkap (ada no_hp)
+    var uid = me.id || me.uid;
+    supabase.from('profiles').select('no_hp').eq('id', uid).maybeSingle().then(function (res) {
+      var pData = res.data;
+      if (!pData || !pData.no_hp || !pData.no_hp.trim()) {
+        avaStep = 'profile';
+      } else {
+        // Cek order yang sedang berjalan
+        var active = memberOrders.find(function (o) {
+          return o.status === 'dipesan' || o.status === 'diproses' || o.status === 'dikirim' || o.status === 'ditolak';
+        });
+        if (active) {
+          avaOrderId = active.id; avaOrderData = active;
+          avaCekStatusFromOrder(active);
+        } else {
+          avaStep = 'menu';
+        }
+      }
+      avaModal.hidden = false;
+      renderAva();
+    }).catch(function () {
+      avaStep = 'menu';
+      avaModal.hidden = false;
+      renderAva();
+    });
+  }
+
+  function avaCekStatus() {
+    var active = memberOrders.find(function (o) {
+      return o.status === 'dipesan' || o.status === 'diproses' || o.status === 'dikirim' || o.status === 'ditolak';
+    });
+    if (!active) { avaStep = 'menu'; return renderAva(); }
+    avaOrderId = active.id; avaOrderData = active;
+    avaCekStatusFromOrder(active);
+    renderAva();
+  }
+
+  function avaCekStatusFromOrder(o) {
+    if (o.status === 'dipesan' || o.status === 'diproses') {
+      avaStep = 'waiting';
+    } else if (o.status === 'ditolak') {
+      avaStep = 'rejected';
+    } else if (o.status === 'dikirim') {
+      avaStep = 'delivery';
+    } else if (o.status === 'diterima') {
+      avaStep = 'complete';
+    }
+  }
+
+  async function avaSaveProfile() {
+    if (avaBusy) return;
+    var nm = (document.getElementById('ava_nama') || {}).value || '';
+    var hp = (document.getElementById('ava_hp') || {}).value || '';
+    if (!nm.trim() || nm.trim().length < 2) { avaNote = 'Nama minimal 2 karakter.'; return renderAva(); }
+    if (!hp.trim() || hp.trim().length < 8) { avaNote = 'Nomor HP minimal 8 digit.'; return renderAva(); }
+    avaBusy = true; avaNote = ''; renderAva();
+    try {
+      var uid = me.id || me.uid;
+      var { error } = await supabase.from('profiles').upsert({ id: uid, nama: nm.trim(), no_hp: hp.trim() }, { onConflict: 'id' });
+      if (error) throw error;
+      prof.displayName = nm.trim();
+      avaStep = 'menu';
+    } catch (e) { avaNote = (e && e.message) || 'Terjadi kesalahan.'; }
+    avaBusy = false; renderAva();
+  }
+
+  async function avaSubmitOrder() {
+    if (avaBusy) return;
+    avaBusy = true; avaStep = 'submitting'; renderAva();
+    try {
+      var payload = {
+        member_id: me.id || me.uid,
+        nama_celengan: avaTellerAns.nama + ' — ' + avaTellerAns.goal,
+        catatan: avaTellerAns.goal,
+        status: 'dipesan'
+      };
+      var target = (document.getElementById('ava_target') || {}).value;
+      if (target && Number(target) > 0) payload.target_nominal = Number(target);
+
+      var res = await supabase.from('orders').insert([payload]).select().single();
+      if (res.error && /table.*order.*schema cache/i.test(res.error.message)) {
+        res = await supabase.from('order').insert([payload]).select().single();
+      }
+      if (res.error) throw res.error;
+      avaOrderId = res.data.id; avaOrderData = res.data;
+      await loadMemberData(me.id || me.uid);
+      toast('Pengajuan tabungan berhasil dikirim!', 'ok');
+      avaStep = 'waiting';
+    } catch (e) {
+      avaNote = (e && e.message) || 'Gagal mengirim pengajuan.';
+      avaStep = 'teller_q2';
+    }
+    avaBusy = false; renderAva();
+  }
+
+  async function avaConfirmReceived() {
+    if (avaBusy || !avaOrderId) return;
+    avaBusy = true; renderAva();
+    try {
+      var { error } = await supabase.rpc('confirm_order_received', { p_order_id: avaOrderId });
+      if (error) throw error;
+      await loadMemberData(me.id || me.uid);
+      toast('Celengan berhasil dikonfirmasi diterima!', 'ok');
+      avaStep = 'complete';
+    } catch (e) { avaNote = (e && e.message) || 'Gagal konfirmasi.'; }
+    avaBusy = false; renderAva();
+  }
+
+  // Realtime Ava: refresh otomatis modal Ava saat status order berubah
+  function avaRealtimeRefresh() {
+    if (!avaModal || avaModal.hidden) return;
+    if (avaStep === 'waiting' || avaStep === 'rejected' || avaStep === 'delivery') {
+      var active = memberOrders.find(function (o) {
+        return o.status === 'dipesan' || o.status === 'diproses' || o.status === 'dikirim' || o.status === 'ditolak';
+      });
+      if (active) {
+        avaOrderId = active.id; avaOrderData = active;
+        avaCekStatusFromOrder(active);
+        renderAva();
+      }
+    }
+  }
+
+  /* =============================================================
+     ADMIN: Modal Tag NFC & Tolak (ganti prompt() yang diblokir)
+     ============================================================= */
+  var adminTagModal = $('#adminTagModal'), adminTagBody = $('#adminTagBody');
+  var adminTagOrderId = null, adminTagBusy = false;
+  // Modal Reject inline di dalam adminTagModal juga
+  var adminRejectOrderId = null, adminRejectMode = false;
+
+  function openAdminTagModal(orderId, orderName) {
+    adminTagOrderId = orderId; adminTagBusy = false; adminRejectMode = false;
+    adminTagBody.textContent = '';
+    adminTagBody.appendChild(E('h3', { text: '🏷️ Daftarkan Tag NFC & Kirim Celengan' }));
+    adminTagBody.appendChild(E('p', { class: 'msg', text: 'Pesanan: ' + (orderName || orderId) }));
+    var f = E('form', { novalidate: '', style: 'display:grid;gap:10px;margin-top:12px' });
+    f.appendChild(E('label', { text: 'UID Tag NFC NTAG (min. 4 karakter)' }, [E('input', { type: 'text', id: 'atag_uid', placeholder: 'cth: NTAG-001 atau 04:A2:3B:5C:88', autocomplete: 'off', maxlength: '60' })]));
+    // Preset chips
+    var chips = E('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-top:4px' });
+    ['NTAG-001', 'NTAG-002', 'NTAG-003', '04:A2:3B:5C:88', '04:FF:12:AB:CD'].forEach(function (uid) {
+      chips.appendChild(E('button', { type: 'button', class: 'tag-preset-chip', text: uid, on: { click: function () {
+        var el = document.getElementById('atag_uid'); if (el) el.value = uid;
+      } } }));
+    });
+    f.appendChild(chips);
+    var sbBtn = E('button', { type: 'submit', class: 'tool', style: 'background:#10b981;color:#fff', text: 'Kirim Celengan ✅' });
+    f.appendChild(sbBtn);
+    f.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var uid = (document.getElementById('atag_uid') || {}).value || '';
+      if (uid.trim().length < 4) { toast('UID NFC minimal 4 karakter!', 'err'); return; }
+      adminTagBusy = true; sbBtn.disabled = true; sbBtn.textContent = 'Mengirim...';
+      supabase.rpc('process_order', { p_order_id: adminTagOrderId, p_status: 'dikirim', p_nfc_uid: uid.trim() }).then(function (r) {
+        if (r.error) { toast('Error: ' + r.error.message, 'err'); sbBtn.disabled = false; sbBtn.textContent = 'Kirim Celengan ✅'; adminTagBusy = false; return; }
+        toast('Celengan dengan UID ' + uid.trim() + ' berhasil dikirim!', 'ok');
+        adminTagModal.hidden = true;
+        aTab('orders');
+      });
+    });
+    adminTagBody.appendChild(f);
+    adminTagBody.appendChild(E('button', { type: 'button', class: 'tool', style: 'margin-top:8px', text: 'Tutup', on: { click: function () { adminTagModal.hidden = true; } } }));
+    adminTagModal.hidden = false;
+  }
+
+  function openAdminRejectModal(orderId, orderName) {
+    adminTagOrderId = orderId; adminTagBusy = false;
+    adminTagBody.textContent = '';
+    adminTagBody.appendChild(E('h3', { text: '❌ Tolak Pesanan Celengan' }));
+    adminTagBody.appendChild(E('p', { class: 'msg', text: 'Pesanan: ' + (orderName || orderId) }));
+    var f = E('form', { novalidate: '', style: 'display:grid;gap:10px;margin-top:12px' });
+    f.appendChild(E('label', { text: 'Alasan Penolakan' }, [E('textarea', { id: 'atag_alasan', rows: '3', style: 'width:100%;resize:vertical;padding:6px;border:1px solid var(--surface-border);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink-primary)', placeholder: 'Contoh: Profil belum lengkap, alamat tidak valid...' })]));
+    var sbBtn = E('button', { type: 'submit', class: 'tool btn-reject', style: 'background:#ef4444;color:#fff', text: 'Konfirmasi Tolak' });
+    f.appendChild(sbBtn);
+    f.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var alasan = (document.getElementById('atag_alasan') || {}).value || '';
+      if (!alasan.trim()) { toast('Isi alasan penolakan!', 'err'); return; }
+      sbBtn.disabled = true; sbBtn.textContent = 'Menolak...';
+      supabase.rpc('process_order', { p_order_id: adminTagOrderId, p_status: 'ditolak', p_alasan_tolak: alasan.trim() }).then(function (r) {
+        if (r.error) { toast('Error: ' + r.error.message, 'err'); sbBtn.disabled = false; sbBtn.textContent = 'Konfirmasi Tolak'; return; }
+        toast('Pesanan berhasil ditolak.', 'warn');
+        adminTagModal.hidden = true;
+        aTab('orders');
+      });
+    });
+    adminTagBody.appendChild(f);
+    adminTagBody.appendChild(E('button', { type: 'button', class: 'tool', style: 'margin-top:8px', text: 'Batal', on: { click: function () { adminTagModal.hidden = true; } } }));
+    adminTagModal.hidden = false;
   }
 
   /* Modal Auth / Dashboard Render */
@@ -1865,9 +2255,11 @@ window.BANKVERSE_FIREBASE_CONFIG = {
         var actWrap = E('div', { class: 'mrow' });
         if (o.status === 'dipesan') {
           actWrap.appendChild(E('button', { type: 'button', class: 'tool', style: 'min-height:30px;padding:2px 8px;font-size:11px', text: 'Proses', on: { click: function () { adminProcessOrder(o.id, 'diproses'); } } }));
-          actWrap.appendChild(E('button', { type: 'button', class: 'tool btn-reject', style: 'min-height:30px;padding:2px 8px;font-size:11px', text: 'Tolak', on: { click: function () { adminRejectOrder(o.id); } } }));
+          actWrap.appendChild(E('button', { type: 'button', class: 'tool btn-approve', style: 'min-height:30px;padding:2px 8px;font-size:11px', text: '🏷️ Tambah Tag & Kirim', on: { click: function () { openAdminTagModal(o.id, o.nama_celengan); } } }));
+          actWrap.appendChild(E('button', { type: 'button', class: 'tool btn-reject', style: 'min-height:30px;padding:2px 8px;font-size:11px', text: 'Tolak', on: { click: function () { openAdminRejectModal(o.id, o.nama_celengan); } } }));
         } else if (o.status === 'diproses') {
-          actWrap.appendChild(E('button', { type: 'button', class: 'tool btn-approve', style: 'min-height:30px;padding:2px 8px;font-size:11px', text: '🏷️ Daftarkan UID & Kirim', on: { click: function () { adminShipOrder(o.id); } } }));
+          actWrap.appendChild(E('button', { type: 'button', class: 'tool btn-approve', style: 'min-height:30px;padding:2px 8px;font-size:11px', text: '🏷️ Tambah Tag & Kirim', on: { click: function () { openAdminTagModal(o.id, o.nama_celengan); } } }));
+          actWrap.appendChild(E('button', { type: 'button', class: 'tool btn-reject', style: 'min-height:30px;padding:2px 8px;font-size:11px', text: 'Tolak', on: { click: function () { openAdminRejectModal(o.id, o.nama_celengan); } } }));
         } else if (o.status === 'dikirim') {
           actWrap.appendChild(E('span', { style: 'font-size:11px;color:var(--brand-blue)', text: 'Terkirim: ' + (o.nfc_uid || '-') }));
         }
@@ -1944,37 +2336,12 @@ window.BANKVERSE_FIREBASE_CONFIG = {
 
   /* Aksi Admin: Daftarkan UID NFC NTAG & Tandai Dikirim */
   async function adminShipOrder(orderId) {
-    var nfcUid = prompt('🏷️ DAFTARKAN UID NFC NTAG UNTUK CELENGAN\n\nMasukkan UID hardware NFC NTAG yang ditempelkan ke celengan fisik (contoh: 04:A2:3B:5C:88 atau NTAG-001):');
-    if (!nfcUid || nfcUid.trim().length < 4) {
-      alert('UID NFC minimal 4 karakter!');
-      return;
-    }
-    try {
-      var { error } = await supabase.rpc('process_order', {
-        p_order_id: orderId,
-        p_status: 'dikirim',
-        p_nfc_uid: nfcUid.trim()
-      });
-      if (error) throw error;
-      toast('Celengan fisik dengan UID ' + nfcUid + ' berhasil ditandai DIKIRIM!', 'ok');
-      aTab('orders');
-    } catch (e) { alert(errText(e)); }
+    openAdminTagModal(orderId, orderId);
   }
 
   /* Aksi Admin: Tolak Pesanan */
   async function adminRejectOrder(orderId) {
-    var alasan = prompt('Masukkan alasan penolakan pesanan:');
-    if (!alasan) return;
-    try {
-      var { error } = await supabase.rpc('process_order', {
-        p_order_id: orderId,
-        p_status: 'ditolak',
-        p_alasan_tolak: alasan.trim()
-      });
-      if (error) throw error;
-      toast('Pesanan ditolak.', 'warn');
-      aTab('orders');
-    } catch (e) { alert(errText(e)); }
+    openAdminRejectModal(orderId, orderId);
   }
 
   /* Aksi Admin: Ganti Role Pengguna */
@@ -2349,6 +2716,16 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     if (mi !== lastMin) { lastMin = mi; minP.rotation.z = -mi / 60 * Math.PI * 2; hourP.rotation.z = -((d.getHours() % 12) + mi / 60) / 12 * Math.PI * 2; }
     stepCamera(dt);
     updateStaff(dt, now); updateCust(dt, now);
+    if (avaLobbyChar) avaLobbyChar.updateTick(dt, now);
+    // Update posisi label Ava di layar
+    if (avaLobbyChar && showStaff && (renderFrameTick % 2 === 0 || view.goal)) {
+      var ap = avaLobbyChar.root.position;
+      var av3 = new THREE.Vector3(ap.x, ap.y + 1.4, ap.z); av3.project(camera);
+      if (av3.z < 1) {
+        avaLobbyChar.el.style.visibility = 'visible';
+        avaLobbyChar.el.style.transform = 'translate(' + ((av3.x * 0.5 + 0.5) * W).toFixed(1) + 'px,' + ((-av3.y * 0.5 + 0.5) * H).toFixed(1) + 'px) translate(-50%,-100%)';
+      } else { avaLobbyChar.el.style.visibility = 'hidden'; }
+    } else if (avaLobbyChar && !showStaff) { avaLobbyChar.el.style.visibility = 'hidden'; }
     wallL.visible = camera.position.x > -15.0;
     wallB.visible = camera.position.z > -15.0;
     renderer.render(scene, camera);
@@ -2418,9 +2795,17 @@ window.BANKVERSE_FIREBASE_CONFIG = {
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
       dock.hidden = true; apanel.hidden = true; modal.hidden = true; tpanel.hidden = true; helpModal.hidden = true;
+      if (avaModal) avaModal.hidden = true;
+      if (adminTagModal) adminTagModal.hidden = true;
     }
   });
   acBtn.addEventListener('click', function () { setNote(''); render(); modal.hidden = false; });
+  // Ava FAB
+  var avaFabBtn = $('#avaFab');
+  if (avaFabBtn) avaFabBtn.addEventListener('click', function () { openAvaFlow(); });
+  // Close avaModal & adminTagModal on backdrop click
+  if (avaModal) avaModal.addEventListener('click', function (e) { if (e.target === avaModal) avaClose(); });
+  if (adminTagModal) adminTagModal.addEventListener('click', function (e) { if (e.target === adminTagModal) adminTagModal.hidden = true; });
 
   var fsBtn = $('#fsBtn');
   function fsEl() { return document.fullscreenElement || document.webkitFullscreenElement || null; }

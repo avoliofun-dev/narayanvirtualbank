@@ -87,6 +87,12 @@
       </button>
     </div>
 
+    <!-- Quick Access Floating Pill: Asisten Virtual Ava -->
+    <button type="button" class="ava-floating-pill" id="avaFab" aria-label="Temui Asisten Virtual Ava">
+      <span class="ava-fab-icon">✨</span>
+      <span class="ava-fab-text">Temui Ava</span>
+    </button>
+
     <!-- Progressive Disclosure: Secondary Pro Tools Bar (Muncul pada mode 'Mahir') -->
     <div class="pro-tools-bar" id="proToolsBar" hidden role="toolbar" aria-label="Alat Diagnostik dan Pengaturan Lanjut">
       <button type="button" class="pro-chip" id="bLab" aria-pressed="true">🏷️ Label 3D</button>
@@ -272,6 +278,12 @@
 
 <!-- Modal Akun Anggota (Supabase Auth & Transaksi) -->
 <div class="modal" id="authModal" hidden role="dialog" aria-modal="true" aria-label="Akun Anggota"><div class="mcard" id="authBody"></div></div>
+
+<!-- Modal Asisten Virtual Ava (Alur Buka Tabungan) -->
+<div class="modal" id="avaModal" hidden role="dialog" aria-modal="true" aria-label="Asisten Virtual Ava"><div class="mcard" id="avaBody"></div></div>
+
+<!-- Modal Daftarkan / Edit Tag NFC Admin -->
+<div class="modal" id="adminTagModal" hidden role="dialog" aria-modal="true" aria-label="Daftarkan Tag NFC Admin"><div class="mcard" id="adminTagBody"></div></div>
 
 <script type="module" src="/src/main.js"></script>
 </body>
