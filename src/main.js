@@ -952,11 +952,12 @@ var nfcFallbackOpen = false;
 var realtimeChannel = null;
 
 /* Backend detection (Supabase & Firebase) */
-var sbOK = Boolean(
-  import.meta.env.VITE_SUPABASE_URL &&
-  import.meta.env.VITE_SUPABASE_ANON_KEY &&
-  import.meta.env.VITE_SUPABASE_URL.indexOf('your-project') === -1
-);
+var defaultUrl = 'https://bpmvxayyddberbxxilnb.supabase.co';
+var defaultKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwbXZ4YXl5ZGRiZXJieHhpbG5iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODkwMzYsImV4cCI6MjEwNzc2NTAzNn0.RoEaKzoAvA7dOxqXH8ITiN9zevFYljFW0WUKRGvcfbU';
+
+var sbUrl = (import.meta.env && import.meta.env.VITE_SUPABASE_URL) || defaultUrl;
+var sbKey = (import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || defaultKey;
+var sbOK = Boolean(sbUrl && sbKey && sbUrl.indexOf('your-project') === -1);
 
 /* Simulasi jaringan Tahap 8 */
 var simOfflineMode = false, simNetworkDelay = 0;
@@ -983,12 +984,13 @@ function field(label,type,id,ac){ return E('label',{ text:label },[E('input',{ t
 function val(id){ var e = document.getElementById(id); return e ? e.value : ''; }
 function errText(e){
   var msg = (e && e.message) || '';
-  if(/already registered|User already exists/i.test(msg)) return 'Email sudah terdaftar. Silakan masuk.';
+  if(/already registered|User already exists/i.test(msg)) return 'Email ini sudah terdaftar. Silakan pilih tab "Masuk" untuk login.';
+  if(/Email not confirmed/i.test(msg)) return 'Email belum dikonfirmasi. Periksa kotak masuk email Anda atau matikan "Confirm email" di Supabase Auth Settings.';
   if(/invalid login credentials|Invalid email or password/i.test(msg)) return 'Email atau kata sandi salah.';
   if(/password should be at least/i.test(msg)) return 'Kata sandi minimal 6-8 karakter.';
   if(/Saldo celengan tidak mencukupi/i.test(msg)) return msg;
   var c = e && e.code || '';
-  if(c === 'auth/email-already-in-use') return 'Email sudah terdaftar. Silakan masuk.';
+  if(c === 'auth/email-already-in-use') return 'Email ini sudah terdaftar. Silakan pilih tab "Masuk".';
   if(c === 'auth/invalid-credential' || c === 'auth/wrong-password' || c === 'auth/user-not-found') return 'Email atau kata sandi salah.';
   if(c === 'auth/weak-password') return 'Kata sandi terlalu lemah (minimal 8 karakter).';
   if(msg) return msg;
@@ -1527,10 +1529,19 @@ async function submitForm(){
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ setNote('Format email tidak valid.','err'); return render(); }
   if(pw.length < 8){ setNote('Kata sandi minimal 8 karakter.','err'); return render(); }
 
-  busy = true; setNote('Menghubungkan ke Supabase...'); render();
+  // Update status UI tanpa menghapus form input di DOM
+  var submitBtn = document.querySelector('#authBody form button[type="submit"]');
+  if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = 'Menghubungkan...'; }
+  var noteStatus = document.querySelector('#authBody .msg[role="status"]');
+  if(noteStatus){ noteStatus.className = 'msg'; noteStatus.textContent = 'Menghubungkan ke Supabase...'; }
+
+  busy = true;
   try{
     if(mode === 'register'){
-      if(name.length < 2){ setNote('Nama lengkap minimal 2 karakter.','err'); busy = false; return render(); }
+      if(name.length < 2){
+        setNote('Nama lengkap minimal 2 karakter.','err');
+        busy = false; return render();
+      }
       regBusy = true;
       var { data: sUp, error: upErr } = await supabase.auth.signUp({
         email: email,
@@ -1539,12 +1550,20 @@ async function submitForm(){
       });
       regBusy = false;
       if(upErr) throw upErr;
+
       if(sUp && sUp.user){
         if(sUp.session){
           await loadMe(sUp.user);
           setNote('Akun berhasil terdaftar dan masuk!','ok');
         } else {
-          setNote('Pendaftaran berhasil! Silakan periksa email Anda atau langsung Masuk.','ok');
+          // Coba auto sign-in jika confirmation di-bypass
+          var { data: sInAuto, error: inAutoErr } = await supabase.auth.signInWithPassword({ email: email, password: pw });
+          if(sInAuto && sInAuto.user){
+            await loadMe(sInAuto.user);
+            setNote('Akun berhasil terdaftar dan masuk!','ok');
+          } else {
+            setNote('Pendaftaran berhasil! Silakan periksa inbox email atau pilih tab Masuk.','ok');
+          }
         }
       }
     } else {
@@ -1555,8 +1574,11 @@ async function submitForm(){
         setNote('');
       }
     }
-  }catch(e){ setNote(errText(e),'err'); }
-  busy = false; render();
+  }catch(e){
+    setNote(errText(e),'err');
+  }
+  busy = false;
+  render();
 }
 
 async function resetPw(){
