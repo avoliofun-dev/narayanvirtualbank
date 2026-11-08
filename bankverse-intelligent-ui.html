@@ -170,11 +170,41 @@ button { font:inherit; color:inherit; cursor:pointer; border:none; background:no
 .toast[hidden] { display:none; }
 .toast.ok { border-color:var(--success); color:var(--success); }
 
+/* Quick Tools Drawer (Bottom Sheet) */
+.drawer-backdrop { position:fixed; inset:0; background:rgba(15,23,42,0.65); backdrop-filter:blur(8px); z-index:45; display:flex; align-items:flex-end; justify-content:center; }
+.drawer-backdrop[hidden] { display:none; }
+.drawer-sheet { width:100%; max-width:500px; background:var(--surface-solid); border-top:1px solid var(--surface-border); border-radius:22px 22px 0 0; padding:12px 18px max(24px, env(safe-area-inset-bottom, 0px)); box-shadow:var(--shadow-lg); max-height:85vh; overflow-y:auto; animation:slideUpSheet 0.3s cubic-bezier(0.16,1,0.3,1); }
+@keyframes slideUpSheet { from{transform:translateY(100%);} to{transform:translateY(0);} }
+.drawer-handle { width:40px; height:5px; border-radius:99px; background:var(--surface-border); margin:0 auto 12px; }
+.drawer-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.drawer-header h3 { margin:0; font-size:16px; font-weight:800; }
+.drawer-grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; }
+.drawer-tile { background:var(--surface-hover); border:1px solid var(--surface-border); border-radius:var(--radius-md); padding:12px 8px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:4px; min-height:72px; cursor:pointer; }
+.drawer-tile:active { transform:scale(0.96); background:var(--surface-border); }
+.drawer-tile-icon { font-size:22px; }
+.drawer-tile-title { font-size:12px; font-weight:700; color:var(--ink-primary); }
+.drawer-tile-status { font-size:10px; font-weight:600; color:var(--brand-blue); background:var(--brand-blue-subtle); padding:1px 6px; border-radius:99px; }
+
 @media (max-width:900px) {
   .context-pill { display:none; }
   .search-label, .cmd-kbd { display:none; }
-  .camera-controls { bottom:150px; right:12px; }
-  .qchip-modern { bottom:84px; right:12px; }
+  .camera-controls { bottom:145px; right:12px; gap:6px; }
+  .cam-fab { width:40px; height:40px; font-size:16px; }
+  .qchip-modern { bottom:84px; right:12px; font-size:11px; padding:6px 12px; min-height:38px; }
+}
+@media (max-width:640px) {
+  .top-nav { left:8px; right:8px; gap:4px; }
+  .brand-title { font-size:11px; }
+  .sim-tag { display:none; }
+  .floor-pill { min-height:36px; padding:2px 8px; font-size:11px; }
+  .icon-btn { min-width:38px; min-height:38px; padding:4px; }
+  .account-btn { min-height:38px; padding:4px 10px; font-size:12px; }
+  #modeLabel { display:none; }
+  .bottom-nav { bottom:max(8px, env(safe-area-inset-bottom, 0px)); width:calc(100% - 16px); max-width:400px; justify-content:space-around; }
+  .nav-btn { min-height:44px; padding:4px 10px; font-size:10px; flex-direction:column; gap:2px; }
+}
+@media (max-width:420px) {
+  #modeBtn { display:none; } /* Terintegrasi penuh di menu Alat */
 }
 </style>
 </head>
@@ -254,6 +284,52 @@ button { font:inherit; color:inherit; cursor:pointer; border:none; background:no
     <button type="button" class="nav-btn" id="navAvatar"><span>🚶</span> Avatarku</button>
     <button type="button" class="nav-btn" id="navMore"><span>⚙️</span> Alat</button>
   </nav>
+</div>
+
+<!-- Mobile Quick Tools Drawer (Semua Tombol Lengkap) -->
+<div class="drawer-backdrop" id="toolsDrawer" hidden role="dialog" aria-modal="true">
+  <div class="drawer-sheet">
+    <div class="drawer-handle"></div>
+    <div class="drawer-header">
+      <div>
+        <h3>Alat & Pengaturan ⚙️</h3>
+        <p style="margin:2px 0 0; font-size:11px; color:var(--ink-muted);">Seluruh kendali fitur bank 3D</p>
+      </div>
+      <button type="button" style="font-size:22px; color:var(--ink-muted);" id="drawerClose">&times;</button>
+    </div>
+    <div class="drawer-grid">
+      <button type="button" class="drawer-tile" id="dBtnLab">
+        <span class="drawer-tile-icon">🏷️</span>
+        <span class="drawer-tile-title">Label 3D</span>
+        <span class="drawer-tile-status" id="dStatusLab">Aktif</span>
+      </button>
+      <button type="button" class="drawer-tile" id="dBtnStaff">
+        <span class="drawer-tile-icon">👥</span>
+        <span class="drawer-tile-title">Staf Chibi</span>
+        <span class="drawer-tile-status" id="dStatusStaff">Aktif</span>
+      </button>
+      <button type="button" class="drawer-tile" id="dBtnMe">
+        <span class="drawer-tile-icon">🚶</span>
+        <span class="drawer-tile-title">Avatarku</span>
+        <span class="drawer-tile-status">Lobi</span>
+      </button>
+      <button type="button" class="drawer-tile" id="dBtnTheme">
+        <span class="drawer-tile-icon">🌓</span>
+        <span class="drawer-tile-title">Tema Tampilan</span>
+        <span class="drawer-tile-status" id="dStatusTheme">Auto</span>
+      </button>
+      <button type="button" class="drawer-tile" id="dBtnMode">
+        <span class="drawer-tile-icon">🌱</span>
+        <span class="drawer-tile-title">Mode Tampilan</span>
+        <span class="drawer-tile-status" id="dStatusMode">Pemula</span>
+      </button>
+      <button type="button" class="drawer-tile" id="dBtnTx">
+        <span class="drawer-tile-icon">💰</span>
+        <span class="drawer-tile-title">Setor & Tarik</span>
+        <span class="drawer-tile-status">Buka</span>
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- Command Palette Modal (Ctrl+K) -->
@@ -565,11 +641,44 @@ document.getElementById('zIn').onclick = () => camera.position.multiplyScalar(0.
 document.getElementById('zOut').onclick = () => camera.position.multiplyScalar(1.15);
 document.getElementById('zFit').onclick = () => flyTo(0, 14, 24);
 
-// Mobile Nav Buttons
+// Mobile Nav Buttons & Drawer
+const toolsDrawer = document.getElementById('toolsDrawer');
+const drawerClose = document.getElementById('drawerClose');
+function openToolsDrawer() {
+  document.getElementById('dStatusTheme').textContent = State.theme === 'auto' ? 'Auto' : (State.theme === 'dark' ? 'Gelap' : 'Terang');
+  document.getElementById('dStatusMode').textContent = State.expMode === 'pro' ? 'Mahir' : 'Pemula';
+  toolsDrawer.hidden = false;
+}
+function closeToolsDrawer() { toolsDrawer.hidden = true; }
+document.getElementById('navMore').onclick = openToolsDrawer;
+if (drawerClose) drawerClose.onclick = closeToolsDrawer;
+if (toolsDrawer) toolsDrawer.onclick = (e) => { if (e.target.id === 'toolsDrawer') closeToolsDrawer(); };
+
+// Drawer actions
+document.getElementById('dBtnLab').onclick = () => {
+  const s = document.getElementById('dStatusLab');
+  s.textContent = s.textContent === 'Aktif' ? 'Mati' : 'Aktif';
+  showToast('Label 3D: ' + s.textContent);
+};
+document.getElementById('dBtnStaff').onclick = () => {
+  const s = document.getElementById('dStatusStaff');
+  s.textContent = s.textContent === 'Aktif' ? 'Mati' : 'Aktif';
+  showToast('Staf Chibi: ' + s.textContent);
+};
+document.getElementById('dBtnMe').onclick = () => { closeToolsDrawer(); flyTo(0, 3, 6); };
+document.getElementById('dBtnTheme').onclick = () => {
+  document.getElementById('themeBtn').click();
+  document.getElementById('dStatusTheme').textContent = State.theme === 'auto' ? 'Auto' : (State.theme === 'dark' ? 'Gelap' : 'Terang');
+};
+document.getElementById('dBtnMode').onclick = () => {
+  document.getElementById('modeBtn').click();
+  document.getElementById('dStatusMode').textContent = State.expMode === 'pro' ? 'Mahir' : 'Pemula';
+};
+document.getElementById('dBtnTx').onclick = () => { closeToolsDrawer(); openTxModal(); };
+
 document.getElementById('navExplore').onclick = () => flyTo(0, 14, 24);
 document.getElementById('navTx').onclick = openTxModal;
 document.getElementById('navAvatar').onclick = () => flyTo(0, 3, 6);
-document.getElementById('navMore').onclick = () => document.getElementById('modeBtn').click();
 document.getElementById('authBtn').onclick = () => {
   State.user = 'Nasabah-Aktif';
   document.getElementById('authBtnLabel').textContent = State.user;
@@ -579,3 +688,4 @@ document.getElementById('authBtn').onclick = () => {
 </script>
 </body>
 </html>
+

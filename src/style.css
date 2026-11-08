@@ -1266,10 +1266,119 @@ button {
 }
 
 /* ==============================================================================
+   INTELLIGENT UI: MOBILE QUICK TOOLS DRAWER (BOTTOM SHEET)
+   ============================================================================== */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 45;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.2s var(--ease-spring);
+}
+.drawer-backdrop[hidden] { display: none; }
+
+.drawer-sheet {
+  width: 100%;
+  max-width: 520px;
+  background: var(--surface-glass-solid);
+  border-top: 1px solid var(--surface-border);
+  border-radius: 24px 24px 0 0;
+  padding: 12px 18px max(24px, env(safe-area-inset-bottom, 0px));
+  box-shadow: var(--shadow-lg);
+  max-height: 85vh;
+  overflow-y: auto;
+  animation: slideUpSheet 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpSheet {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.drawer-handle {
+  width: 44px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--surface-border);
+  margin: 0 auto 12px;
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.drawer-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--ink-primary);
+}
+.drawer-header p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.drawer-tile {
+  background: var(--surface-hover);
+  border: 1px solid var(--surface-border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  min-height: 74px;
+  transition: all var(--anim-fast);
+  cursor: pointer;
+}
+.drawer-tile:hover {
+  background: var(--surface-glass-solid);
+  border-color: var(--brand-blue);
+  box-shadow: var(--shadow-sm);
+}
+.drawer-tile:active {
+  transform: scale(0.96);
+  background: var(--surface-active);
+}
+
+.drawer-tile-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+.drawer-tile-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-primary);
+}
+.drawer-tile-status {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--brand-blue);
+  background: var(--brand-blue-subtle);
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+}
+
+/* ==============================================================================
    RESPONSIVE DESIGN (Mobile First)
    ============================================================================== */
 @media (max-width: 900px) {
-  .context-pill { display: none; } /* Terlalu sempit di mobile, pindah ke aksi cepat */
+  .context-pill { display: none; } /* Terlalu sempit di mobile, beralih ke tombol Transaksi */
   .search-label, .cmd-kbd { display: none; }
   .floor-pill .pill-desc { display: none; }
   
@@ -1283,21 +1392,103 @@ button {
   }
 
   .camera-floating-controls {
-    bottom: 150px;
+    bottom: 145px;
     right: 12px;
+    gap: 6px;
+  }
+  .cam-fab {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
   }
 
   .modern-qchip {
     bottom: 84px;
     right: 12px;
+    font-size: 11px;
+    padding: 6px 12px;
+    min-height: 40px;
   }
 }
 
-@media (max-width: 600px) {
-  .brand-sub { display: none; }
-  .mode-label { display: none; }
-  .brand-badge { padding: 4px 8px; }
-  .top-nav { gap: 6px; }
+@media (max-width: 640px) {
+  .top-nav {
+    left: 8px;
+    right: 8px;
+    gap: 4px;
+  }
+  .brand-group {
+    gap: 4px;
+    min-width: 0;
+  }
+  .brand-badge {
+    padding: 4px 6px;
+    gap: 4px;
+    min-width: 0;
+  }
+  .brand-title {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .brand-sub {
+    display: none;
+  }
+  .floor-pill {
+    min-height: 36px;
+    padding: 2px 8px;
+    font-size: 11px;
+  }
+  .top-actions {
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .icon-tool-btn {
+    min-width: 38px;
+    min-height: 38px;
+    padding: 4px;
+  }
+  .mode-label {
+    display: none;
+  }
+  .primary-account-btn {
+    min-height: 38px;
+    padding: 4px 10px;
+    font-size: 12px;
+    gap: 4px;
+  }
+  .bottom-nav-bar {
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    width: calc(100% - 16px);
+    max-width: 420px;
+    justify-content: space-around;
+    padding: 3px;
+  }
+  .nav-item-btn {
+    min-height: 44px;
+    padding: 4px 10px;
+    font-size: 10px;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .nav-item-btn .nav-icon {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 440px) {
+  /* Di layar HP paling kecil (360px - 414px), sembunyikan toggle mode di top bar karena sudah ada di menu Alat */
+  #expModeBtn {
+    display: none;
+  }
+  .brand-title {
+    font-size: 10.5px;
+  }
+  .sim-tag {
+    display: none;
+  }
+  .drawer-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

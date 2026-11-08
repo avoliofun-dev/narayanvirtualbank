@@ -2293,14 +2293,80 @@ if(onboardingDontShowBtn){
   });
 }
 
-/* 6. Mobile Bottom Navigation Listeners */
+/* 6. Mobile Bottom Navigation Listeners & Quick Tools Drawer */
 var bAreaNav = $('#bAreaNav'), quickActionNav = $('#quickActionNav'), myAvatarNav = $('#myAvatarNav'), menuMoreNav = $('#menuMoreNav');
+var toolsDrawer = $('#toolsDrawer'), drawerCloseBtn = $('#drawerCloseBtn');
+
+function openToolsDrawer(){
+  if(!toolsDrawer) return;
+  var sLab = $('#dStatusLab'), sStaff = $('#dStatusStaff'), sQ = $('#dStatusQuality');
+  var sHud = $('#dStatusHud'), sTheme = $('#dStatusTheme'), sMode = $('#dStatusMode');
+  if(sLab) sLab.textContent = showLabels ? 'Aktif' : 'Mati';
+  if(sStaff) sStaff.textContent = showStaff ? 'Aktif' : 'Mati';
+  if(sQ) sQ.textContent = hi ? 'Tinggi' : 'Hemat';
+  if(sHud) sHud.textContent = (!perfHud.hidden) ? 'Aktif' : 'Sembunyi';
+  if(sTheme) sTheme.textContent = currentTheme === 'auto' ? 'Auto' : (currentTheme === 'dark' ? 'Gelap' : 'Terang');
+  if(sMode) sMode.textContent = expMode === 'pro' ? 'Mahir' : 'Pemula';
+  toolsDrawer.hidden = false;
+}
+function closeToolsDrawer(){
+  if(toolsDrawer) toolsDrawer.hidden = true;
+}
+
 if(bAreaNav) bAreaNav.addEventListener('click', function(){ dock.hidden = !dock.hidden; });
 if(quickActionNav) quickActionNav.addEventListener('click', openCommandPalette);
 if(myAvatarNav) myAvatarNav.addEventListener('click', function(){ $('#bMe').click(); });
-if(menuMoreNav) menuMoreNav.addEventListener('click', function(){
-  if(expMode !== 'pro') applyExpMode('pro');
-  else applyExpMode('beginner');
+if(menuMoreNav) menuMoreNav.addEventListener('click', openToolsDrawer);
+if(drawerCloseBtn) drawerCloseBtn.addEventListener('click', closeToolsDrawer);
+if(toolsDrawer) toolsDrawer.addEventListener('click', function(e){ if(e.target === toolsDrawer) closeToolsDrawer(); });
+
+// Drawer tiles actions (Menjamin SEMUA tombol ada dan bisa diakses di layar HP)
+var dBtnLab = $('#dBtnLab'), dBtnStaff = $('#dBtnStaff'), dBtnMe = $('#dBtnMe'), dBtnQuality = $('#dBtnQuality');
+var dBtnDiag = $('#dBtnDiag'), dBtnHelp = $('#dBtnHelp'), dBtnFs = $('#dBtnFs'), dBtnHud = $('#dBtnHud');
+var dBtnTheme = $('#dBtnTheme'), dBtnMode = $('#dBtnMode');
+
+if(dBtnLab) dBtnLab.addEventListener('click', function(){
+  $('#bLab').click();
+  var s = $('#dStatusLab'); if(s) s.textContent = showLabels ? 'Aktif' : 'Mati';
+  toast('Label 3D: ' + (showLabels ? 'Ditampilkan' : 'Disembunyikan'), 'ok');
+});
+if(dBtnStaff) dBtnStaff.addEventListener('click', function(){
+  $('#bStaff').click();
+  var s = $('#dStatusStaff'); if(s) s.textContent = showStaff ? 'Aktif' : 'Mati';
+  toast('Staf Chibi: ' + (showStaff ? 'Ditampilkan' : 'Disembunyikan'), 'ok');
+});
+if(dBtnMe) dBtnMe.addEventListener('click', function(){
+  closeToolsDrawer();
+  $('#bMe').click();
+});
+if(dBtnQuality) dBtnQuality.addEventListener('click', function(){
+  $('#qBtn').click();
+  var s = $('#dStatusQuality'); if(s) s.textContent = hi ? 'Tinggi' : 'Hemat';
+});
+if(dBtnDiag) dBtnDiag.addEventListener('click', function(){
+  closeToolsDrawer();
+  openTestPanel();
+});
+if(dBtnHelp) dBtnHelp.addEventListener('click', function(){
+  closeToolsDrawer();
+  $('#helpBtn').click();
+});
+if(dBtnFs) dBtnFs.addEventListener('click', function(){
+  fsToggle();
+  toast('Layar penuh diubah.', 'ok');
+});
+if(dBtnHud) dBtnHud.addEventListener('click', function(){
+  perfHud.hidden = !perfHud.hidden;
+  var s = $('#dStatusHud'); if(s) s.textContent = (!perfHud.hidden) ? 'Aktif' : 'Sembunyi';
+  toast('HUD FPS: ' + ((!perfHud.hidden) ? 'Aktif' : 'Nonaktif'), 'ok');
+});
+if(dBtnTheme) dBtnTheme.addEventListener('click', function(){
+  if(themeBtn) themeBtn.click();
+  var s = $('#dStatusTheme'); if(s) s.textContent = currentTheme === 'auto' ? 'Auto' : (currentTheme === 'dark' ? 'Gelap' : 'Terang');
+});
+if(dBtnMode) dBtnMode.addEventListener('click', function(){
+  if(expModeBtn) expModeBtn.click();
+  var s = $('#dStatusMode'); if(s) s.textContent = expMode === 'pro' ? 'Mahir' : 'Pemula';
 });
 
 /* 7. Dock Tab Switcher */

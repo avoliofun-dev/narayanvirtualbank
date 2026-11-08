@@ -140,6 +140,72 @@
     </nav>
   </section>
 
+  <!-- INTELLIGENT UI: Mobile Quick Tools Drawer (Semua Tombol Lengkap) -->
+  <div class="drawer-backdrop" id="toolsDrawer" hidden role="dialog" aria-modal="true" aria-label="Menu Lengkap Alat dan Pengaturan">
+    <div class="drawer-sheet">
+      <div class="drawer-handle"></div>
+      <div class="drawer-header">
+        <div>
+          <h3>Menu & Pengaturan ⚙️</h3>
+          <p>Seluruh fitur dan alat kendali bank 3D</p>
+        </div>
+        <button type="button" class="close-btn" id="drawerCloseBtn" aria-label="Tutup menu alat">&times;</button>
+      </div>
+      <div class="drawer-grid">
+        <button type="button" class="drawer-tile" id="dBtnLab">
+          <span class="drawer-tile-icon">🏷️</span>
+          <span class="drawer-tile-title">Label 3D</span>
+          <span class="drawer-tile-status" id="dStatusLab">Aktif</span>
+        </button>
+        <button type="button" class="drawer-tile" id="dBtnStaff">
+          <span class="drawer-tile-icon">👥</span>
+          <span class="drawer-tile-title">Staf Chibi</span>
+          <span class="drawer-tile-status" id="dStatusStaff">Aktif</span>
+        </button>
+        <button type="button" class="drawer-tile" id="dBtnMe">
+          <span class="drawer-tile-icon">🚶</span>
+          <span class="drawer-tile-title">Avatarku</span>
+          <span class="drawer-tile-status">Lobi</span>
+        </button>
+        <button type="button" class="drawer-tile" id="dBtnQuality">
+          <span class="drawer-tile-icon">⚡</span>
+          <span class="drawer-tile-title">Kualitas Grafis</span>
+          <span class="drawer-tile-status" id="dStatusQuality">Tinggi</span>
+        </button>
+        <button type="button" class="drawer-tile" id="dBtnDiag">
+          <span class="drawer-tile-icon">🧪</span>
+          <span class="drawer-tile-title">Uji & Diagnosa</span>
+          <span class="drawer-tile-status">Buka</span>
+        </button>
+        <button type="button" class="drawer-tile" id="dBtnHelp">
+          <span class="drawer-tile-icon">ℹ️</span>
+          <span class="drawer-tile-title">Panduan & Privasi</span>
+          <span class="drawer-tile-status">Buka</span>
+        </button>
+        <button type="button" class="drawer-tile" id="dBtnFs">
+          <span class="drawer-tile-icon">⛶</span>
+          <span class="drawer-tile-title">Layar Penuh</span>
+          <span class="drawer-tile-status">Toggle</span>
+        </button>
+        <button type="button" class="drawer-tile" id="dBtnHud">
+          <span class="drawer-tile-icon">📊</span>
+          <span class="drawer-tile-title">HUD FPS / Dev</span>
+          <span class="drawer-tile-status" id="dStatusHud">Sembunyi</span>
+        </button>
+        <button type="button" class="drawer-tile" id="dBtnTheme">
+          <span class="drawer-tile-icon">🌓</span>
+          <span class="drawer-tile-title">Tema Tampilan</span>
+          <span class="drawer-tile-status" id="dStatusTheme">Auto</span>
+        </button>
+        <button type="button" class="drawer-tile" id="dBtnMode">
+          <span class="drawer-tile-icon">🌱</span>
+          <span class="drawer-tile-title">Mode Tampilan</span>
+          <span class="drawer-tile-status" id="dStatusMode">Pemula</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Sidebar Dock: Daftar Ruangan, Staf & Aktivitas -->
   <aside class="dock" id="dock" hidden aria-label="Daftar area bank dan direktori">
     <div class="dhead">
