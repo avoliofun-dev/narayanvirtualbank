@@ -31,11 +31,11 @@
 
   /* Light Theme (Default) */
   --bg-stage: linear-gradient(180deg, #dbeafe 0%, #eff6ff 45%, #f8fafc 100%);
-  --surface-glass: rgba(255, 255, 255, 0.82);
+  --surface-glass: rgba(255, 255, 255, 0.92);
   --surface-glass-solid: #ffffff;
   --surface-border: rgba(203, 213, 225, 0.85);
   --surface-border-subtle: rgba(226, 232, 240, 0.7);
-  --surface-hover: rgba(241, 245, 249, 0.9);
+  --surface-hover: rgba(241, 245, 249, 0.95);
   --surface-active: #e2e8f0;
 
   --ink-primary: #0f172a;
@@ -68,11 +68,11 @@
 .dark-theme,
 [data-theme="dark"] {
   --bg-stage: linear-gradient(180deg, #090e17 0%, #0f172a 45%, #1e293b 100%);
-  --surface-glass: rgba(15, 23, 42, 0.85);
+  --surface-glass: rgba(15, 23, 42, 0.92);
   --surface-glass-solid: #1e293b;
   --surface-border: rgba(51, 65, 85, 0.8);
   --surface-border-subtle: rgba(51, 65, 85, 0.5);
-  --surface-hover: rgba(30, 41, 59, 0.9);
+  --surface-hover: rgba(30, 41, 59, 0.95);
   --surface-active: #334155;
 
   --ink-primary: #f8fafc;
@@ -181,9 +181,7 @@ button {
   flex-direction: column;
   align-items: center;
   line-height: 1.2;
-  background: var(--surface-glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--surface-glass-solid);
   border: 1.5px solid var(--surface-border);
   border-radius: var(--radius-sm);
   padding: 3px 10px;
@@ -239,8 +237,7 @@ button {
   flex-direction: column;
   align-items: center;
   line-height: 1.1;
-  background: var(--surface-glass);
-  backdrop-filter: blur(8px);
+  background: var(--surface-glass-solid);
   border: 1.5px solid var(--sc, var(--brand-blue));
   border-radius: var(--radius-sm);
   padding: 2px 8px;
@@ -293,8 +290,8 @@ button {
   align-items: center;
   gap: var(--sp-2);
   background: var(--surface-glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-md);
   padding: 6px 12px;
@@ -341,7 +338,7 @@ button {
 .floor-pill-group {
   display: flex;
   background: var(--surface-glass);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(4px);
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-md);
   padding: 3px;
@@ -388,8 +385,8 @@ button {
   align-items: center;
   gap: var(--sp-2);
   background: var(--surface-glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-full);
   padding: 4px 6px 4px 12px;
@@ -456,7 +453,7 @@ button {
   min-height: 44px;
   padding: 8px 12px;
   background: var(--surface-glass);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(4px);
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
@@ -548,8 +545,8 @@ button {
   height: 44px;
   border-radius: var(--radius-full);
   background: var(--surface-glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   border: 1px solid var(--surface-border);
   box-shadow: var(--shadow-md);
   color: var(--ink-primary);
@@ -580,7 +577,7 @@ button {
   gap: 6px;
   z-index: 9;
   background: var(--surface-glass);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(4px);
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-md);
   padding: 6px;
@@ -624,7 +621,7 @@ button {
   bottom: 84px;
   right: max(var(--sp-4), env(safe-area-inset-right, 0px));
   background: var(--surface-glass);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(4px);
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-full);
   box-shadow: var(--shadow-md);
@@ -694,8 +691,8 @@ button {
   display: flex;
   align-items: center;
   background: var(--surface-glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-full);
   padding: 4px;
@@ -940,8 +937,8 @@ button {
   max-width: 100%;
   z-index: 20;
   background: var(--surface-glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   border-left: 1px solid var(--surface-border);
   box-shadow: var(--shadow-lg);
   padding: var(--sp-5);
@@ -1057,8 +1054,8 @@ button {
   inset: 0;
   z-index: 35;
   background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: grid;
   place-items: center;
   padding: var(--sp-4);

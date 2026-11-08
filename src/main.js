@@ -40,10 +40,16 @@ window.BANKVERSE_FIREBASE_CONFIG = {
   if (typeof THREE === 'undefined') { fail('Library 3D tidak bisa dimuat. Cek koneksi internet lalu muat ulang halaman.'); return; }
   var canvas = $('#gl'), stage = $('#stage'), labelsEl = $('#labels'), renderer;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer = new THREE.WebGLRenderer({
+      canvas: canvas,
+      antialias: !coarse, // Di HP antialias dimatikan karena pixel density tinggi, di desktop tetap aktif
+      alpha: true,
+      powerPreference: 'high-performance',
+      precision: coarse ? 'mediump' : 'highp'
+    });
   } catch (e) { fail('Tampilan 3D tidak bisa dimuat di perangkat ini.'); return; }
   renderer.setClearColor(0x000000, 0);
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap; // Jauh lebih ringan dan cepat dari PCFSoftShadowMap
 
   /* Penanganan WebGL Context Lost / Restored untuk stabilitas HP Android saat ganti aplikasi */
   canvas.addEventListener('webglcontextlost', function (e) {
@@ -60,7 +66,7 @@ window.BANKVERSE_FIREBASE_CONFIG = {
   scene.add(new THREE.HemisphereLight(0xffffff, 0xc9bfa8, 0.78));
   var sun = new THREE.DirectionalLight(0xffffff, 0.6);
   sun.position.set(14, 30, 20);
-  sun.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048);
+  sun.shadow.mapSize.set(coarse ? 512 : 1024, coarse ? 512 : 1024);
   var sc = sun.shadow.camera; sc.left = -24; sc.right = 24; sc.top = 24; sc.bottom = -24; sc.near = 1; sc.far = 100; sun.shadow.bias = -0.0006;
   scene.add(sun);
 
@@ -569,9 +575,17 @@ window.BANKVERSE_FIREBASE_CONFIG = {
         }
       }
       if (s.sayUntil && now > s.sayUntil) { s.sayEl.hidden = true; s.sayUntil = 0; }
-      v3.set(r.position.x, s.y + (s.st === 'sit' ? 2.3 : 2.4), r.position.z).project(camera);
-      s.el.style.visibility = (showStaff && v3.z < 1) ? 'visible' : 'hidden';
-      s.el.style.transform = 'translate(' + ((v3.x * 0.5 + 0.5) * W).toFixed(1) + 'px,' + ((-v3.y * 0.5 + 0.5) * H).toFixed(1) + 'px) translate(-50%,-100%)';
+      if (showStaff && (renderFrameTick % 2 === 0 || view.goal)) {
+        v3.set(r.position.x, s.y + (s.st === 'sit' ? 2.3 : 2.4), r.position.z).project(camera);
+        if (v3.z < 1) {
+          s.el.style.visibility = 'visible';
+          s.el.style.transform = 'translate(' + ((v3.x * 0.5 + 0.5) * W).toFixed(1) + 'px,' + ((-v3.y * 0.5 + 0.5) * H).toFixed(1) + 'px) translate(-50%,-100%)';
+        } else {
+          s.el.style.visibility = 'hidden';
+        }
+      } else if (!showStaff) {
+        s.el.style.visibility = 'hidden';
+      }
     });
   }
 
@@ -698,7 +712,8 @@ window.BANKVERSE_FIREBASE_CONFIG = {
   var hi = true, batterySaver = false;
   function setQuality(h) {
     hi = h;
-    var maxDpr = batterySaver ? 1.0 : (h ? Math.min(window.devicePixelRatio || 1, 2) : 1);
+    var maxDpr = batterySaver ? 1.0 : (h ? Math.min(window.devicePixelRatio || 1, 1.5) : 1.0);
+    if (coarse) maxDpr = Math.min(maxDpr, 1.25);
     renderer.setPixelRatio(maxDpr);
     renderer.shadowMap.enabled = h && !batterySaver; sun.castShadow = h && !batterySaver;
     scene.traverse(function (o) { var m = o.material; if (m) { (Array.isArray(m) ? m : [m]).forEach(function (x) { x.needsUpdate = true; }); } });
@@ -850,14 +865,30 @@ window.BANKVERSE_FIREBASE_CONFIG = {
         if (follow(c, dt, now)) { addLog(c.name + ' keluar dari bank'); dropCust(c); return; }
       }
       if (c.member) setMS(c, msText(c));
-      v3.set(c.root.position.x, 2.1, c.root.position.z).project(camera);
-      c.el.style.visibility = (showStaff && v3.z < 1) ? 'visible' : 'hidden';
-      c.el.style.transform = 'translate(' + ((v3.x * 0.5 + 0.5) * W).toFixed(1) + 'px,' + ((-v3.y * 0.5 + 0.5) * H).toFixed(1) + 'px) translate(-50%,-100%)';
+      if (showStaff && (renderFrameTick % 2 === 0 || view.goal)) {
+        v3.set(c.root.position.x, 2.1, c.root.position.z).project(camera);
+        if (v3.z < 1) {
+          c.el.style.visibility = 'visible';
+          c.el.style.transform = 'translate(' + ((v3.x * 0.5 + 0.5) * W).toFixed(1) + 'px,' + ((-v3.y * 0.5 + 0.5) * H).toFixed(1) + 'px) translate(-50%,-100%)';
+        } else {
+          c.el.style.visibility = 'hidden';
+        }
+      } else if (!showStaff) {
+        c.el.style.visibility = 'hidden';
+      }
     });
     q.forEach(function (c) {
-      v3.set(c.root.position.x, 2.1, c.root.position.z).project(camera);
-      c.el.style.visibility = (showStaff && v3.z < 1) ? 'visible' : 'hidden';
-      c.el.style.transform = 'translate(' + ((v3.x * 0.5 + 0.5) * W).toFixed(1) + 'px,' + ((-v3.y * 0.5 + 0.5) * H).toFixed(1) + 'px) translate(-50%,-100%)';
+      if (showStaff && (renderFrameTick % 2 === 0 || view.goal)) {
+        v3.set(c.root.position.x, 2.1, c.root.position.z).project(camera);
+        if (v3.z < 1) {
+          c.el.style.visibility = 'visible';
+          c.el.style.transform = 'translate(' + ((v3.x * 0.5 + 0.5) * W).toFixed(1) + 'px,' + ((-v3.y * 0.5 + 0.5) * H).toFixed(1) + 'px) translate(-50%,-100%)';
+        } else {
+          c.el.style.visibility = 'hidden';
+        }
+      } else if (!showStaff) {
+        c.el.style.visibility = 'hidden';
+      }
     });
     var t = 'Dilayani ' + fmt(calledNo) + ' \u00b7 Menunggu ' + waiting() + ' \u00b7 Selesai ' + served;
     if (t !== lastChip) { lastChip = t; chip.textContent = t; }
@@ -2305,9 +2336,14 @@ window.BANKVERSE_FIREBASE_CONFIG = {
   }
 
   /* ---------- loop render utama ---------- */
-  var last = performance.now(), lastMin = -1;
+  var last = performance.now(), lastMin = -1, renderFrameTick = 0;
   function tick(now) {
+    if (document.hidden) {
+      setTimeout(function () { requestAnimationFrame(tick); }, 350);
+      return;
+    }
     requestAnimationFrame(tick);
+    renderFrameTick++;
     var dt = Math.min(0.05, (now - last) / 1000); last = now;
     var d = new Date(), mi = d.getMinutes();
     if (mi !== lastMin) { lastMin = mi; minP.rotation.z = -mi / 60 * Math.PI * 2; hourP.rotation.z = -((d.getHours() % 12) + mi / 60) / 12 * Math.PI * 2; }
@@ -2331,11 +2367,19 @@ window.BANKVERSE_FIREBASE_CONFIG = {
       }
     }
 
-    AREAS.forEach(function (a) {
-      v3.set(a.x, a.y, a.z).project(camera);
-      a.el.style.visibility = (showLabels && v3.z < 1) ? 'visible' : 'hidden';
-      a.el.style.transform = 'translate(' + ((v3.x * 0.5 + 0.5) * W).toFixed(1) + 'px,' + ((-v3.y * 0.5 + 0.5) * H).toFixed(1) + 'px) translate(-50%,-100%)';
-    });
+    if (showLabels && (renderFrameTick % 2 === 0 || view.goal)) {
+      AREAS.forEach(function (a) {
+        v3.set(a.x, a.y, a.z).project(camera);
+        if (v3.z < 1) {
+          a.el.style.visibility = 'visible';
+          a.el.style.transform = 'translate(' + ((v3.x * 0.5 + 0.5) * W).toFixed(1) + 'px,' + ((-v3.y * 0.5 + 0.5) * H).toFixed(1) + 'px) translate(-50%,-100%)';
+        } else {
+          a.el.style.visibility = 'hidden';
+        }
+      });
+    } else if (!showLabels) {
+      AREAS.forEach(function (a) { a.el.style.visibility = 'hidden'; });
+    }
   }
   resize(); requestAnimationFrame(tick);
 
