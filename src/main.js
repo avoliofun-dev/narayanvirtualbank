@@ -981,8 +981,23 @@ window.BANKVERSE_FIREBASE_CONFIG = {
   var defaultUrl = 'https://hnjktcmhfansbyuihdyk.supabase.co';
   var defaultKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhuamt0Y21oZmFuc2J5dWloZHlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQxMzUxNjMsImV4cCI6MjEwOTcxMTE2M30.k-dXyIcbXtN3NNwJGzD94kPnaC_ZtYKXA4npyqXhZb8';
 
+  // Hapus sisa sesi dan token dari database lama (bpmvxayyddberbxxilnb) dari browser
+  try {
+    Object.keys(localStorage).forEach(function (k) {
+      if (k.indexOf('bpmvxayyddberbxxilnb') !== -1 || k.indexOf('chill_bank_family') !== -1) {
+        localStorage.removeItem(k);
+      }
+    });
+  } catch (e) { }
+
   var sbUrl = (import.meta.env && import.meta.env.VITE_SUPABASE_URL) || defaultUrl;
+  if (!sbUrl || sbUrl.indexOf('bpmvxayyddberbxxilnb') !== -1) {
+    sbUrl = defaultUrl;
+  }
   var sbKey = (import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || defaultKey;
+  if (!sbKey || sbUrl === defaultUrl) {
+    sbKey = defaultKey;
+  }
   var sbOK = Boolean(sbUrl && sbKey && sbUrl.indexOf('your-project') === -1);
 
   /* Simulasi jaringan Tahap 8 */
@@ -1126,7 +1141,8 @@ window.BANKVERSE_FIREBASE_CONFIG = {
       E('h2', { text: prof.displayName }),
       E('div', { class: 'dash-user-badge' }, [
         E('span', { class: 'dash-role-badge ' + (isAdm ? 'role-admin' : 'role-member'), text: isAdm ? '👑 Administrator' : '👤 Nasabah' }),
-        E('span', { style: 'font-size:12px;color:var(--ink-secondary)', text: prof.email })
+        E('span', { style: 'font-size:12px;color:var(--ink-secondary)', text: prof.email }),
+        E('span', { style: 'font-size:11px;color:var(--ink-secondary);opacity:0.8;font-family:monospace', text: '• DB: hnjktcmhfansbyuihdyk' })
       ])
     ]);
     h.appendChild(uInfo);
@@ -1780,7 +1796,7 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     var head = E('div', { class: 'dash-header' }, [
       E('div', {}, [
         E('h2', { text: '👑 Panel Administrator Celengan NFC' }),
-        E('p', { class: 'msg', text: 'Manajemen pesanan, pendaftaran UID NTAG, dan audit realtime.' })
+        E('p', { class: 'msg', text: 'Database: hnjktcmhfansbyuihdyk.supabase.co | Manajemen pesanan, pendaftaran UID NTAG, dan audit realtime.' })
       ]),
       E('button', { type: 'button', class: 'tool', text: 'Tutup Panel', on: { click: function () { apanel.hidden = true; } } })
     ]);
