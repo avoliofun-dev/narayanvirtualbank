@@ -246,6 +246,7 @@ BEGIN
         diproses_oleh = auth.uid(),
         updated_at = NOW()
     WHERE id = p_order_id;
+    
 
   ELSE
     UPDATE public.orders
