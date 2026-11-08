@@ -1412,14 +1412,21 @@ window.BANKVERSE_FIREBASE_CONFIG = {
 
     busy = true; setNote('Mengirim pesanan...'); render();
     try {
-      var { data, error } = await supabase.from('orders').insert([{
+      var payload = {
         member_id: me.id || me.uid,
         nama_celengan: nama,
         target_nominal: target,
         catatan: catatan,
         status: 'dipesan'
-      }]).select().single();
-      if (error) throw error;
+      };
+
+      // Prioritas 1: Gunakan tabel resmi 'orders'
+      var res = await supabase.from('orders').insert([payload]).select().single();
+      // Fallback: Jika schema cache PostgREST mencari singular 'order'
+      if (res.error && /table.*order.*schema cache/i.test(res.error.message)) {
+        res = await supabase.from('order').insert([payload]).select().single();
+      }
+      if (res.error) throw res.error;
 
       await loadMemberData(me.id || me.uid);
       setNote('Pesanan berhasil diajukan! Menunggu verifikasi admin.', 'ok');
