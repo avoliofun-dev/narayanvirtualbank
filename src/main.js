@@ -2056,4 +2056,268 @@ function fsSync(){ fsBtn.textContent = fsEl() ? 'Keluar layar penuh' : 'Layar pe
 fsBtn.addEventListener('click',fsToggle);
 ['fullscreenchange','webkitfullscreenchange'].forEach(function(n){ document.addEventListener(n,fsSync); });
 
+/* ==============================================================================
+   INTELLIGENT UI CONTROLLER (Adaptive, Contextual, Proactive)
+   ============================================================================== */
+
+/* 1. Theme Management (Auto / Dark / Light) */
+var themeBtn = $('#themeToggleBtn'), themeIcon = $('#themeIcon');
+var currentTheme = localStorage.getItem('bankverse_theme') || 'auto';
+function applyTheme(t){
+  currentTheme = t;
+  localStorage.setItem('bankverse_theme', t);
+  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var isDark = t === 'dark' || (t === 'auto' && prefersDark);
+  if(isDark){
+    document.documentElement.classList.add('dark-theme');
+    themeIcon.textContent = t === 'auto' ? '🌓' : '🌙';
+  } else {
+    document.documentElement.classList.remove('dark-theme');
+    themeIcon.textContent = t === 'auto' ? '🌓' : '☀️';
+  }
+}
+applyTheme(currentTheme);
+if(themeBtn){
+  themeBtn.addEventListener('click', function(){
+    var next = currentTheme === 'auto' ? 'dark' : (currentTheme === 'dark' ? 'light' : 'auto');
+    applyTheme(next);
+    toast('Tema diubah ke: ' + (next === 'auto' ? 'Otomatis (Sistem)' : (next === 'dark' ? 'Mode Gelap' : 'Mode Terang')), 'ok');
+  });
+}
+
+/* 2. Adaptive Layout: Experience Mode (Pemula vs Mahir) */
+var expMode = localStorage.getItem('bankverse_exp_mode') || 'beginner';
+var expModeBtn = $('#expModeBtn'), modeLabelText = $('#modeLabelText'), modeBadgeIcon = $('#modeBadgeIcon');
+var proToolsBar = $('#proToolsBar');
+function applyExpMode(m){
+  expMode = m;
+  localStorage.setItem('bankverse_exp_mode', m);
+  if(m === 'pro'){
+    if(modeLabelText) modeLabelText.textContent = 'Mahir';
+    if(modeBadgeIcon) modeBadgeIcon.textContent = '⚡';
+    if(proToolsBar) proToolsBar.hidden = false;
+    if(perfHud) perfHud.hidden = false;
+  } else {
+    if(modeLabelText) modeLabelText.textContent = 'Pemula';
+    if(modeBadgeIcon) modeBadgeIcon.textContent = '🌱';
+    if(proToolsBar) proToolsBar.hidden = true;
+    if(perfHud) perfHud.hidden = true;
+  }
+}
+applyExpMode(expMode);
+if(expModeBtn){
+  expModeBtn.addEventListener('click', function(){
+    var next = expMode === 'beginner' ? 'pro' : 'beginner';
+    applyExpMode(next);
+    toast('Mode tampilan beralih ke: ' + (next === 'pro' ? 'Mahir (Fitur Lengkap)' : 'Pemula (Ringkas)'), 'ok');
+  });
+}
+
+/* 3. Contextual Suggestions Engine */
+var ctxPill = $('#contextPill'), ctxText = $('#contextText'), ctxActionBtn = $('#contextActionBtn');
+function updateContextSuggestion(){
+  if(!ctxPill || !ctxText || !ctxActionBtn) return;
+  if(!me){
+    ctxText.textContent = 'Belum masuk? Buat akun simulasi untuk mulai transaksi 3D.';
+    ctxActionBtn.textContent = 'Daftar';
+    ctxActionBtn.onclick = function(){ mode = 'register'; setNote(''); render(); modal.hidden = false; };
+  } else if(wal === 0 || wal === null){
+    ctxText.textContent = 'Saldo virtual Anda SIM 0. Ingin melakukan setoran pertama?';
+    ctxActionBtn.textContent = 'Setor';
+    ctxActionBtn.onclick = function(){
+      flyTo([0,1.2,-2], 26, 0.6);
+      txForm = { type:'deposit', requestId:newReqId() }; receipt = null; setNote(''); render(); modal.hidden = false;
+    };
+  } else if(mAv && mAv.job){
+    ctxText.textContent = 'Avatar Anda sedang dalam pelayanan perbankan...';
+    ctxActionBtn.textContent = 'Pantau';
+    ctxActionBtn.onclick = function(){ if(mAv) flyTo([mAv.root.position.x, 1.2, mAv.root.position.z], 20, 0.6); };
+  } else {
+    ctxText.textContent = 'Cari aksi cepat atau ruangan dengan tekan Ctrl+K.';
+    ctxActionBtn.textContent = 'Cari';
+    ctxActionBtn.onclick = function(){ openCommandPalette(); };
+  }
+}
+setInterval(updateContextSuggestion, 3000);
+updateContextSuggestion();
+
+/* 4. Smart Command Palette (Ctrl+K) */
+var cmdBackdrop = $('#cmdPalette'), cmdInput = $('#cmdInput'), cmdResults = $('#cmdResults'), cmdBtn = $('#cmdPaletteBtn');
+var cmdSelectedIndex = 0;
+var COMMANDS = [
+  { icon:'💰', title:'Setor Saldo Virtual', tag:'Transaksi', run:function(){ flyTo([0,1.2,-2], 26, 0.6); txForm = { type:'deposit', requestId:newReqId() }; receipt = null; setNote(''); render(); modal.hidden = false; } },
+  { icon:'💸', title:'Tarik Saldo Virtual', tag:'Transaksi', run:function(){ flyTo([0,1.2,-2], 26, 0.6); txForm = { type:'withdraw', requestId:newReqId() }; receipt = null; setNote(''); render(); modal.hidden = false; } },
+  { icon:'💳', title:'Buat Kartu Baru / NFC', tag:'Kartu', run:function(){ newCard(); } },
+  { icon:'👤', title:'Buka Akun / Profil Anggota', tag:'Akun', run:function(){ modal.hidden = false; render(); } },
+  { icon:'🏛️', title:'Kunjungi Teller 1 (Lantai 1)', tag:'Navigasi 3D', run:function(){ flyTo([-2.8,1.2,-2], 22, 0.6); } },
+  { icon:'🏛️', title:'Kunjungi Teller 2 (Lantai 1)', tag:'Navigasi 3D', run:function(){ flyTo([2.8,1.2,-2], 22, 0.6); } },
+  { icon:'🤝', title:'Kunjungi Customer Service', tag:'Navigasi 3D', run:function(){ flyTo([-6,1.2,1], 20, 0.6); } },
+  { icon:'🏧', title:'Kunjungi Area ATM Mandiri', tag:'Navigasi 3D', run:function(){ flyTo([6.5,1.2,6], 18, 0.6); } },
+  { icon:'🔼', title:'Pindah ke Lantai 2 (Rapat & Manajer)', tag:'Lantai', run:function(){ flyTo([0,H2+1,-11.5],34,0.5); } },
+  { icon:'🔽', title:'Pindah ke Lantai 1 (Lobi Utama)', tag:'Lantai', run:function(){ flyTo([0,1.2,2],40,0.62); } },
+  { icon:'🚶', title:'Fokus ke Avatarku', tag:'Avatar', run:function(){ if(mAv) flyTo([mAv.root.position.x,1.2,mAv.root.position.z],20,0.6); else toast('Masuk dulu lewat tombol Akun agar avatarmu muncul di lobi.',''); } },
+  { icon:'🌓', title:'Ganti Tema Tampilan (Gelap/Terang)', tag:'Preferensi', run:function(){ if(themeBtn) themeBtn.click(); } },
+  { icon:'🌱', title:'Ganti Mode Pengalaman (Pemula/Mahir)', tag:'Preferensi', run:function(){ if(expModeBtn) expModeBtn.click(); } },
+  { icon:'🧪', title:'Buka Panel Uji & Diagnosa Rilis', tag:'Sistem', run:function(){ openTestPanel(); } },
+  { icon:'ℹ️', title:'Bantuan & Kebijakan Privasi', tag:'Bantuan', run:function(){ $('#helpBtn').click(); } }
+];
+
+function openCommandPalette(){
+  if(!cmdBackdrop) return;
+  cmdBackdrop.hidden = false;
+  cmdInput.value = '';
+  cmdSelectedIndex = 0;
+  renderCommandResults('');
+  setTimeout(function(){ cmdInput.focus(); }, 50);
+}
+function closeCommandPalette(){
+  if(!cmdBackdrop) return;
+  cmdBackdrop.hidden = true;
+}
+function renderCommandResults(query){
+  if(!cmdResults) return;
+  cmdResults.textContent = '';
+  var q = (query || '').toLowerCase().trim();
+  var filtered = COMMANDS.filter(function(c){
+    return !q || c.title.toLowerCase().indexOf(q) >= 0 || c.tag.toLowerCase().indexOf(q) >= 0;
+  });
+  if(!filtered.length){
+    var empty = document.createElement('div');
+    empty.className = 'msg';
+    empty.textContent = 'Tidak ada aksi yang cocok dengan "' + query + '". Coba kata kunci lain.';
+    cmdResults.appendChild(empty);
+    return;
+  }
+  filtered.forEach(function(c, idx){
+    var item = document.createElement('div');
+    item.className = 'cmd-item' + (idx === cmdSelectedIndex ? ' selected' : '');
+    item.innerHTML = '<div class="cmd-item-left"><span class="cmd-item-icon">'+c.icon+'</span><div><div class="cmd-item-title">'+c.title+'</div></div></div><span class="cmd-item-tag">'+c.tag+'</span>';
+    item.addEventListener('click', function(){
+      closeCommandPalette();
+      c.run();
+    });
+    cmdResults.appendChild(item);
+  });
+}
+if(cmdBtn) cmdBtn.addEventListener('click', openCommandPalette);
+if(cmdInput){
+  cmdInput.addEventListener('input', function(e){
+    cmdSelectedIndex = 0;
+    renderCommandResults(e.target.value);
+  });
+  cmdInput.addEventListener('keydown', function(e){
+    var items = cmdResults.querySelectorAll('.cmd-item');
+    if(e.key === 'ArrowDown'){
+      e.preventDefault();
+      cmdSelectedIndex = (cmdSelectedIndex + 1) % Math.max(1, items.length);
+      renderCommandResults(cmdInput.value);
+    } else if(e.key === 'ArrowUp'){
+      e.preventDefault();
+      cmdSelectedIndex = (cmdSelectedIndex - 1 + items.length) % Math.max(1, items.length);
+      renderCommandResults(cmdInput.value);
+    } else if(e.key === 'Enter'){
+      e.preventDefault();
+      var q = cmdInput.value.toLowerCase().trim();
+      var filtered = COMMANDS.filter(function(c){ return !q || c.title.toLowerCase().indexOf(q) >= 0 || c.tag.toLowerCase().indexOf(q) >= 0; });
+      if(filtered[cmdSelectedIndex]){
+        closeCommandPalette();
+        filtered[cmdSelectedIndex].run();
+      }
+    } else if(e.key === 'Escape'){
+      closeCommandPalette();
+    }
+  });
+}
+if(cmdBackdrop){
+  cmdBackdrop.addEventListener('click', function(e){
+    if(e.target === cmdBackdrop) closeCommandPalette();
+  });
+}
+document.addEventListener('keydown', function(e){
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'){
+    e.preventDefault();
+    if(cmdBackdrop && !cmdBackdrop.hidden) closeCommandPalette();
+    else openCommandPalette();
+  }
+});
+
+/* 5. Smart Interactive Onboarding Tour */
+var onboardingCard = $('#onboardingCard'), onboardingStepContent = $('#onboardingStepContent');
+var onboardingNextBtn = $('#onboardingNextBtn'), onboardingSkipBtn = $('#onboardingSkipBtn'), onboardingDontShowBtn = $('#onboardingDontShowBtn');
+var onboardingStep = 1;
+var ONBOARDING_STEPS = [
+  { badge:'PANDUAN 1/3: SELAMAT DATANG', title:'Selamat Datang di BankVerse 3D! 👋', desc:'Ini adalah simulasi perbankan virtual tiga dimensi lengkap dengan transaksi setor/tarik, kartu NFC, dan database real-time.' },
+  { badge:'PANDUAN 2/3: NAVIGASI MUDAH', title:'Jelajahi Setiap Sudut Gedung 🧭', desc:'Sentuh dan seret layar untuk memutar kamera. Gunakan tombol L1 dan L2 di atas untuk berpindah lantai secara instan.' },
+  { badge:'PANDUAN 3/3: TRANSAKSI & TELLER', title:'Layanan Teller & Aksi Cepat ⚡', desc:'Masuk ke Akun untuk mendapatkan avatar 3D Anda. Kunjungi Teller untuk melakukan simulasi transaksi kapan saja.' }
+];
+
+function showOnboardingStep(step){
+  onboardingStep = step;
+  var data = ONBOARDING_STEPS[step - 1];
+  if(!data){
+    closeOnboarding();
+    return;
+  }
+  if(onboardingStepContent){
+    onboardingStepContent.innerHTML = '<div class="onboarding-badge">'+data.badge+'</div><h3>'+data.title+'</h3><p>'+data.desc+'</p>';
+  }
+  if(onboardingNextBtn){
+    onboardingNextBtn.textContent = step === ONBOARDING_STEPS.length ? 'Mulai Eksplorasi 🎉' : 'Lanjut ➔';
+  }
+}
+function closeOnboarding(){
+  if(onboardingCard) onboardingCard.hidden = true;
+}
+if(!localStorage.getItem('bankverse_onboarding_dismissed')){
+  setTimeout(function(){
+    if(onboardingCard){
+      onboardingCard.hidden = false;
+      showOnboardingStep(1);
+    }
+  }, 1200);
+}
+if(onboardingNextBtn){
+  onboardingNextBtn.addEventListener('click', function(){
+    if(onboardingStep < ONBOARDING_STEPS.length) showOnboardingStep(onboardingStep + 1);
+    else { localStorage.setItem('bankverse_onboarding_dismissed', 'true'); closeOnboarding(); }
+  });
+}
+if(onboardingSkipBtn){
+  onboardingSkipBtn.addEventListener('click', closeOnboarding);
+}
+if(onboardingDontShowBtn){
+  onboardingDontShowBtn.addEventListener('click', function(){
+    localStorage.setItem('bankverse_onboarding_dismissed', 'true');
+    closeOnboarding();
+    toast('Panduan disembunyikan. Anda dapat membukanya kembali di menu Bantuan.', 'ok');
+  });
+}
+
+/* 6. Mobile Bottom Navigation Listeners */
+var bAreaNav = $('#bAreaNav'), quickActionNav = $('#quickActionNav'), myAvatarNav = $('#myAvatarNav'), menuMoreNav = $('#menuMoreNav');
+if(bAreaNav) bAreaNav.addEventListener('click', function(){ dock.hidden = !dock.hidden; });
+if(quickActionNav) quickActionNav.addEventListener('click', openCommandPalette);
+if(myAvatarNav) myAvatarNav.addEventListener('click', function(){ $('#bMe').click(); });
+if(menuMoreNav) menuMoreNav.addEventListener('click', function(){
+  if(expMode !== 'pro') applyExpMode('pro');
+  else applyExpMode('beginner');
+});
+
+/* 7. Dock Tab Switcher */
+var tabAreas = $('#tabAreas'), tabStaff = $('#tabStaff'), tabLog = $('#tabLog');
+if(tabAreas && tabStaff && tabLog){
+  tabAreas.addEventListener('click', function(){
+    tabAreas.classList.add('active'); tabStaff.classList.remove('active'); tabLog.classList.remove('active');
+    list.hidden = false; staffList.hidden = true; logList.hidden = true;
+  });
+  tabStaff.addEventListener('click', function(){
+    tabStaff.classList.add('active'); tabAreas.classList.remove('active'); tabLog.classList.remove('active');
+    list.hidden = true; staffList.hidden = false; logList.hidden = true;
+  });
+  tabLog.addEventListener('click', function(){
+    tabLog.classList.add('active'); tabAreas.classList.remove('active'); tabStaff.classList.remove('active');
+    list.hidden = true; staffList.hidden = true; logList.hidden = false;
+  });
+}
+
 })();

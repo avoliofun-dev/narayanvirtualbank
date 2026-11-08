@@ -3,69 +3,210 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#1f3a68">
+<meta name="theme-color" content="#0f172a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>BANKVERSE 3D - Tahap 8 (Kandidat Rilis &amp; Pengujian)</title>
+<title>BANKVERSE 3D - Intelligent Virtual Bank</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Silkscreen:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap">
 </head>
 <body>
-<div class="net-banner" id="netBanner" hidden role="alert"><span id="netText">Koneksi internet terputus. Mode offline aktif.</span></div>
-<div class="app">
-  <section class="stage" id="stage" aria-label="Bank 3D">
+<!-- Banner Koneksi / Offline Status -->
+<div class="net-banner" id="netBanner" hidden role="alert">
+  <span class="net-dot"></span>
+  <span id="netText">Koneksi internet terputus. Mode offline aktif.</span>
+</div>
+
+<div class="app" id="appRoot">
+  <!-- 3D Canvas Stage -->
+  <section class="stage" id="stage" aria-label="Simulasi Bank 3D Virtual">
     <canvas id="gl"></canvas>
     <div class="labels" id="labels"></div>
-    <div class="tools" id="tools">
-      <button type="button" class="tool" id="zIn" aria-label="Dekatkan kamera">+</button>
-      <button type="button" class="tool" id="zOut" aria-label="Jauhkan kamera">&minus;</button>
-      <button type="button" class="tool" id="bFit">Lihat semua</button>
-      <button type="button" class="tool" id="bF1">Lantai 1</button>
-      <button type="button" class="tool" id="bF2">Lantai 2</button>
-      <button type="button" class="tool" id="bLab" aria-pressed="true">Label</button>
-      <button type="button" class="tool" id="bStaff" aria-pressed="true">Staf</button>
-      <button type="button" class="tool" id="bArea">Area</button>
-      <button type="button" class="tool" id="bMe">Avatarku</button>
-      <button type="button" class="tool" id="qBtn">Kualitas: Tinggi</button>
-      <button type="button" class="tool btn-highlight" id="tstBtn">Uji & Diagnosa</button>
-      <button type="button" class="tool" id="helpBtn">Bantuan & Privasi</button>
-      <button type="button" class="tool" id="acBtn">Akun</button>
-      <button type="button" class="tool" id="fsBtn">Layar penuh</button>
+
+    <!-- INTELLIGENT UI: Top Adaptive Header Bar -->
+    <header class="top-nav" role="banner">
+      <div class="brand-group">
+        <div class="brand-badge" id="brandLogo">
+          <span class="brand-icon">🏛️</span>
+          <div class="brand-text">
+            <span class="brand-title">BANKVERSE<small class="sim-tag">SIMULASI</small></span>
+            <span class="brand-sub">Virtual Banking Experience</span>
+          </div>
+        </div>
+        
+        <!-- Floor Pills Switcher -->
+        <div class="floor-pill-group" role="group" aria-label="Pilih Lantai">
+          <button type="button" class="floor-pill active" id="bF1" aria-label="Lantai 1: Layanan Utama">L1 <span class="pill-desc">Lobi & Teller</span></button>
+          <button type="button" class="floor-pill" id="bF2" aria-label="Lantai 2: Manajemen & Rapat">L2 <span class="pill-desc">Manajemen</span></button>
+        </div>
+      </div>
+
+      <!-- Center: Contextual Suggestion Banner (Proaktif & Cerdas) -->
+      <div class="context-pill" id="contextPill" role="status" aria-live="polite">
+        <span class="ctx-indicator">💡</span>
+        <span class="ctx-text" id="contextText">Memuat rekomendasi cerdas...</span>
+        <button type="button" class="ctx-action-btn" id="contextActionBtn">Mulai</button>
+      </div>
+
+      <!-- Right Action Tools -->
+      <div class="top-actions">
+        <!-- Smart Search / Command Palette Trigger (Ctrl+K) -->
+        <button type="button" class="icon-tool-btn search-trigger-btn" id="cmdPaletteBtn" aria-label="Buka pencarian pintar (Ctrl+K)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <span class="search-label">Cari aksi...</span>
+          <kbd class="cmd-kbd">Ctrl K</kbd>
+        </button>
+
+        <!-- Mode Toggle: Pemula vs Mahir -->
+        <button type="button" class="icon-tool-btn" id="expModeBtn" aria-label="Ubah mode tampilan: Pemula atau Mahir" title="Ganti Mode: Pemula / Mahir">
+          <span class="mode-badge-icon" id="modeBadgeIcon">🌱</span>
+          <span class="mode-label" id="modeLabelText">Pemula</span>
+        </button>
+
+        <!-- Theme Toggle: Auto / Dark / Light -->
+        <button type="button" class="icon-tool-btn" id="themeToggleBtn" aria-label="Ganti mode gelap/terang" title="Tema Tampilan">
+          <span id="themeIcon">🌓</span>
+        </button>
+
+        <!-- Tombol Akun Utama -->
+        <button type="button" class="primary-account-btn" id="acBtn" aria-label="Buka Akun Pengguna">
+          <span class="avatar-ring">👤</span>
+          <span class="ac-text">Akun</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Camera Control Float (Minimalis & Ergonomis) -->
+    <div class="camera-floating-controls" role="group" aria-label="Kontrol Kamera">
+      <button type="button" class="cam-fab" id="zIn" aria-label="Perbesar Tampilan (Zoom In)">+</button>
+      <button type="button" class="cam-fab" id="zOut" aria-label="Perkecil Tampilan (Zoom Out)">&minus;</button>
+      <button type="button" class="cam-fab" id="bFit" aria-label="Reset Tampilan Kamera" title="Reset Sudut Pandang">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+      </button>
     </div>
+
+    <!-- Progressive Disclosure: Secondary Pro Tools Bar (Muncul pada mode 'Mahir') -->
+    <div class="pro-tools-bar" id="proToolsBar" hidden role="toolbar" aria-label="Alat Diagnostik dan Pengaturan Lanjut">
+      <button type="button" class="pro-chip" id="bLab" aria-pressed="true">🏷️ Label 3D</button>
+      <button type="button" class="pro-chip" id="bStaff" aria-pressed="true">👥 Staf Chibi</button>
+      <button type="button" class="pro-chip" id="bMe">📍 Avatarku</button>
+      <button type="button" class="pro-chip" id="qBtn">⚡ Kualitas: Tinggi</button>
+      <button type="button" class="pro-chip" id="tstBtn">🧪 Diagnosa & Uji</button>
+      <button type="button" class="pro-chip" id="helpBtn">ℹ️ Panduan & Privasi</button>
+      <button type="button" class="pro-chip" id="fsBtn">⛶ Layar Penuh</button>
+    </div>
+
+    <!-- Hidden native tools holder for JS backward compatibility -->
+    <div class="tools-legacy-holder" id="tools" hidden>
+      <button type="button" id="bArea">Area</button>
+    </div>
+
+    <!-- Floating HUD Telemetri / Performa (Mahir) -->
     <div class="perf-hud good" id="perfHud" hidden aria-live="off">
-      <div>FPS: <span class="fps-val" id="hudFps">60</span> (<span id="hudMs">16.6</span> ms)</div>
-      <div>Draw: <span id="hudCalls">0</span> | Tri: <span id="hudTris">0k</span></div>
-      <div id="hudBat">Bat: 100%</div>
+      <div class="hud-item"><span class="hud-label">FPS</span><span class="fps-val" id="hudFps">60</span> (<span id="hudMs">16.6</span> ms)</div>
+      <div class="hud-item"><span class="hud-label">Draw/Tri</span><span id="hudCalls">0</span> / <span id="hudTris">0k</span></div>
+      <div class="hud-item" id="hudBat">Bat: 100%</div>
     </div>
-    <p class="hint">Seret untuk memutar. Dua jari zoom/geser. Klik kanan / Shift + seret untuk geser.</p>
-    <button type="button" class="qchip" id="qchip" aria-label="Buka panel aktivitas">Antrean: memuat</button>
-    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-    <span class="badge">SIMULASI</span>
+
+    <!-- Interactive Queue Live Pill -->
+    <button type="button" class="qchip modern-qchip" id="qchip" aria-label="Buka status antrean bank">
+      <span class="pulse-indicator"></span>
+      <span id="qchipText">Antrean: memuat...</span>
+    </button>
+
+    <!-- Smart Interactive Toast Notification -->
+    <div class="toast modern-toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <!-- Mobile-First Bottom Floating Bar (Thumb Navigation Zone) -->
+    <nav class="bottom-nav-bar" role="navigation" aria-label="Navigasi Bawah">
+      <button type="button" class="nav-item-btn" id="bAreaNav" aria-label="Daftar Ruangan & Staf">
+        <span class="nav-icon">🧭</span>
+        <span class="nav-text">Jelajah</span>
+      </button>
+      <button type="button" class="nav-item-btn" id="quickActionNav" aria-label="Aksi Cepat Transaksi">
+        <span class="nav-icon">⚡</span>
+        <span class="nav-text">Transaksi</span>
+      </button>
+      <button type="button" class="nav-item-btn" id="myAvatarNav" aria-label="Lompat ke Avatar Saya">
+        <span class="nav-icon">🚶</span>
+        <span class="nav-text">Avatar</span>
+      </button>
+      <button type="button" class="nav-item-btn" id="menuMoreNav" aria-label="Menu Pengaturan & Alat">
+        <span class="nav-icon">⚙️</span>
+        <span class="nav-text">Alat</span>
+      </button>
+    </nav>
   </section>
-  <aside class="dock" id="dock" hidden aria-label="Daftar area bank">
-    <div class="dhead"><div><h1>BANKVERSE</h1><p>Ketuk area untuk memindahkan kamera.</p></div><button type="button" class="tool" id="dClose">Tutup</button></div>
-    <ul class="areas" id="areas"></ul>
-    <p><b>Staf</b> (ketuk untuk memfokuskan kamera)</p>
-    <ul class="areas" id="staffList"></ul>
-    <p><b>Aktivitas antrean</b> (terbaru di atas)</p>
-    <ul class="log" id="logList"></ul>
-    <p><b>Tahap 8 (Kandidat Rilis & Pengujian):</b> Seluruh alur (staf chibi, nasabah simulasi, antrean 3D, akun Firebase, kartu NFC, transaksi virtual, panel admin) dilengkapi panel Diagnosa & Uji Kelayakan Rilis, pengujian isolasi data, pengujian transaksi ganda, pemantau performa/baterai, serta kebijakan privasi dan syarat penggunaan.</p>
+
+  <!-- Sidebar Dock: Daftar Ruangan, Staf & Aktivitas -->
+  <aside class="dock" id="dock" hidden aria-label="Daftar area bank dan direktori">
+    <div class="dhead">
+      <div>
+        <h2>Direktori Bank</h2>
+        <p>Pilih ruangan atau staf untuk memindahkan kamera 3D.</p>
+      </div>
+      <button type="button" class="close-btn" id="dClose" aria-label="Tutup panel direktori">&times;</button>
+    </div>
+    <div class="dock-tabs" role="tablist">
+      <button type="button" class="dock-tab active" id="tabAreas" role="tab" aria-selected="true">Ruangan (L1 & L2)</button>
+      <button type="button" class="dock-tab" id="tabStaff" role="tab" aria-selected="false">Staf Bank</button>
+      <button type="button" class="dock-tab" id="tabLog" role="tab" aria-selected="false">Aktivitas Lobi</button>
+    </div>
+    <div class="dock-content">
+      <ul class="areas" id="areas" role="tabpanel"></ul>
+      <ul class="areas" id="staffList" role="tabpanel" hidden></ul>
+      <ul class="log" id="logList" role="tabpanel" hidden></ul>
+    </div>
   </aside>
 </div>
 
-<!-- Panel Admin (Tahap 6 & 7) -->
-<div class="apanel" id="adminPanel" hidden role="dialog" aria-label="Panel admin"><div id="adminBody"></div></div>
+<!-- INTELLIGENT UI: Command Palette (Ctrl+K) -->
+<div class="cmd-palette-backdrop" id="cmdPalette" hidden role="dialog" aria-modal="true" aria-label="Pencarian Perintah Cepat">
+  <div class="cmd-palette-box">
+    <div class="cmd-input-wrap">
+      <span class="cmd-search-icon">🔍</span>
+      <input type="text" id="cmdInput" placeholder="Ketik tindakan (setor, tarik, teller, ganti lantai, kartu)..." autocomplete="off" spellcheck="false">
+      <kbd class="esc-kbd">ESC</kbd>
+    </div>
+    <div class="cmd-results" id="cmdResults">
+      <!-- Generated dynamically based on query & context -->
+    </div>
+    <div class="cmd-footer">
+      <span>Gunakan tombol <kbd>↑</kbd> <kbd>↓</kbd> untuk memilih, <kbd>Enter</kbd> untuk eksekusi</span>
+    </div>
+  </div>
+</div>
 
-<!-- Panel Uji & Diagnosa (Tahap 8) -->
-<div class="apanel" id="testPanel" hidden role="dialog" aria-label="Panel Diagnosa dan Pengujian Tahap 8"><div id="testBody"></div></div>
+<!-- INTELLIGENT UI: Smart Onboarding Card -->
+<div class="onboarding-overlay" id="onboardingCard" hidden role="region" aria-label="Panduan Memulai">
+  <div class="onboarding-card">
+    <button type="button" class="onboarding-close" id="onboardingSkipBtn" aria-label="Lewati panduan">&times;</button>
+    <div class="onboarding-step-content" id="onboardingStepContent">
+      <div class="onboarding-badge">PANDUAN INTERAKTIF 1/3</div>
+      <h3>Selamat Datang di BankVerse 3D! 👋</h3>
+      <p>Rasakan pengalaman simulasi bank virtual tiga dimensi dengan sistem database Supabase real-time.</p>
+    </div>
+    <div class="onboarding-footer">
+      <button type="button" class="btn-subtle" id="onboardingDontShowBtn">Jangan Tampilkan Lagi</button>
+      <button type="button" class="btn-primary" id="onboardingNextBtn">Lanjut ➔</button>
+    </div>
+  </div>
+</div>
 
-<!-- Modal Bantuan & Kebijakan Privasi (Tahap 8) -->
+<!-- Panel Admin (Supabase / Data Manajerial) -->
+<div class="apanel" id="adminPanel" hidden role="dialog" aria-label="Panel Admin Perbankan"><div id="adminBody"></div></div>
+
+<!-- Panel Uji & Diagnosa -->
+<div class="apanel" id="testPanel" hidden role="dialog" aria-label="Panel Diagnosa dan Pengujian"><div id="testBody"></div></div>
+
+<!-- Modal Bantuan & Kebijakan Privasi -->
 <div class="modal" id="helpModal" hidden role="dialog" aria-modal="true" aria-label="Bantuan dan Kebijakan"><div class="mcard" id="helpBody"></div></div>
 
-<!-- Modal Akun Anggota (Tahap 3, 4, 5, 7) -->
-<div class="modal" id="authModal" hidden role="dialog" aria-modal="true" aria-label="Akun anggota"><div class="mcard" id="authBody"></div></div>
+<!-- Modal Akun Anggota (Supabase Auth & Transaksi) -->
+<div class="modal" id="authModal" hidden role="dialog" aria-modal="true" aria-label="Akun Anggota"><div class="mcard" id="authBody"></div></div>
+
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>
