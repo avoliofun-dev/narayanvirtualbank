@@ -1,15 +1,17 @@
 import './style.css';
 import * as THREE from 'three';
+import { supabase } from './supabaseClient.js';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import 'firebase/compat/firestore';
 import 'firebase/compat/functions';
 
-// Kode aplikasi lama memakai variabel global `THREE` dan `firebase`.
+// Kode aplikasi memakai variabel global `THREE`, `firebase`, dan `supabase`.
 window.THREE = THREE;
 window.firebase = firebase;
+window.supabase = supabase;
 
-// Konfigurasi Firebase dibaca dari environment variable Vite (lihat .env.example).
+// Konfigurasi Firebase dibaca dari environment variable Vite (opsional jika memakai Firebase).
 window.BANKVERSE_FIREBASE_CONFIG = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'ISI_API_KEY',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'ISI_PROJECT_ID.firebaseapp.com',
@@ -893,6 +895,32 @@ async function runTx(p){
   try{
     if(simNetworkDelay > 0) await new Promise(function(r){ setTimeout(r, simNetworkDelay); });
     if(simOfflineMode) throw { code:'functions/unavailable', message:'Koneksi jaringan terputus (simulasi offline).' };
+
+    if(sbOK && me){
+      var uid = me.id || me.uid;
+      if(!currentTabunganId) await loadWallet(uid);
+      var tipeSql = p.type === 'deposit' ? 'setor' : 'tarik';
+      var insRes = await supabase.from('transaksi').insert([{
+        tabungan_id: currentTabunganId,
+        member_id: uid,
+        tipe: tipeSql,
+        nominal: p.amount,
+        catatan: p.note || (TXN[p.type] + ' di BankVerse 3D')
+      }]).select().maybeSingle();
+
+      if(insRes.error){
+        return { ok:false, msg:'Transaksi gagal: ' + insRes.error.message, say:'Maaf, transaksi tidak dapat diproses.' };
+      }
+      await refreshWallet();
+      var insTx = insRes.data;
+      receipt = txs.filter(function(x){ return x.id === (insTx && insTx.id); })[0] || null;
+      return {
+        ok:true,
+        msg: TXN[p.type] + ' ' + fmtSim(p.amount) + ' berhasil (Supabase).',
+        say: 'Selesai, silakan cek saldo tabungan Anda.'
+      };
+    }
+
     var r = (await fn.httpsCallable('simTx')(p)).data;
     wal = r.balance; await refreshWallet();
     receipt = txs.filter(function(x){ return x.reference === r.reference; })[0] || null;
@@ -900,7 +928,7 @@ async function runTx(p){
   }catch(e){
     var c = e && e.code || '';
     if(['functions/internal','functions/unavailable','functions/unknown','functions/deadline-exceeded'].indexOf(c) >= 0) txForm = { type:p.type, requestId:p.requestId };
-    return { ok:false, msg:txMsg(e), say:'Maaf, ada kendala koneksi.' };
+    return { ok:false, msg: (e && e.message) || txMsg(e), say:'Maaf, ada kendala koneksi.' };
   }
 }
 function stopLive(){ if(liveUnsub){ liveUnsub(); liveUnsub = null; } }
@@ -916,9 +944,17 @@ $('#bMe').addEventListener('click',function(){
   if(mAv) flyTo([mAv.root.position.x,1.2,mAv.root.position.z],20,0.6); else toast('Masuk dulu lewat tombol Akun agar avatarmu muncul di lobi.','');
 });
 
-/* ---------- akun anggota & Firebase (Tahap 3) ---------- */
+/* ---------- akun anggota & Database (Tahap 3) ---------- */
 var FBC = window.BANKVERSE_FIREBASE_CONFIG, fbOK = false, auth = null, db = null, fn = null, cards = [], pending = null, isAdm = false, wal = null, txs = [], txForm = null, receipt = null, txErr = '';
 var me = null, prof = null, acts = [], mode = 'login', note = { t:'', k:'' }, busy = false, regBusy = false;
+var currentTabunganId = null;
+
+/* Backend detection (Supabase & Firebase) */
+var sbOK = Boolean(
+  import.meta.env.VITE_SUPABASE_URL &&
+  import.meta.env.VITE_SUPABASE_ANON_KEY &&
+  import.meta.env.VITE_SUPABASE_URL.indexOf('your-project') === -1
+);
 
 /* Simulasi jaringan Tahap 8 */
 var simOfflineMode = false, simNetworkDelay = 0;
@@ -928,6 +964,8 @@ try{
     firebase.initializeApp(FBC); auth = firebase.auth(); db = firebase.firestore(); fn = firebase.functions(); fbOK = true;
   }
 }catch(e){ fbOK = false; }
+
+var backendOK = sbOK || fbOK;
 
 var modal = $('#authModal'), acBtn = $('#acBtn');
 function E(t,p,k){
@@ -942,13 +980,18 @@ function E(t,p,k){
 function field(label,type,id,ac){ return E('label',{ text:label },[E('input',{ type:type, id:id, autocomplete:ac, maxlength:'80' })]); }
 function val(id){ var e = document.getElementById(id); return e ? e.value : ''; }
 function errText(e){
+  var msg = (e && e.message) || '';
+  if(/already registered|User already exists/i.test(msg)) return 'Email sudah terdaftar. Silakan masuk.';
+  if(/invalid login credentials|Invalid email or password/i.test(msg)) return 'Email atau kata sandi salah.';
+  if(/password should be at least/i.test(msg)) return 'Kata sandi minimal 6-8 karakter.';
   var c = e && e.code || '';
   if(c === 'auth/email-already-in-use') return 'Email sudah terdaftar. Silakan masuk.';
   if(c === 'auth/invalid-credential' || c === 'auth/wrong-password' || c === 'auth/user-not-found') return 'Email atau kata sandi salah.';
   if(c === 'auth/weak-password') return 'Kata sandi terlalu lemah (minimal 8 karakter).';
   if(c === 'auth/too-many-requests') return 'Terlalu banyak percobaan. Coba lagi beberapa menit lagi.';
   if(c === 'auth/network-request-failed') return 'Koneksi terputus. Periksa internet lalu coba lagi.';
-  if(c === 'permission-denied' || c === 'auth/operation-not-allowed') return 'Akses ditolak. Periksa aturan Firestore dan metode login di Firebase.';
+  if(c === 'permission-denied' || c === 'auth/operation-not-allowed') return 'Akses ditolak. Periksa aturan database.';
+  if(msg) return msg;
   return 'Terjadi kesalahan. Coba lagi.';
 }
 function setNote(t,k){ note = { t:t, k:k||'' }; }
@@ -957,9 +1000,9 @@ function render(){
   var b = $('#authBody'); b.textContent = '';
   if(me && prof) return renderMember(b);
   b.appendChild(E('h2',{ text:'Akun Anggota BANKVERSE' }));
-  b.appendChild(E('p',{ class:'msg', text:'Prototipe SIMULASI. Bukan bank sungguhan dan saldo bukan uang nyata.' }));
-  if(!fbOK){
-    b.appendChild(E('p',{ class:'msg warn', text: location.protocol === 'file:' ? 'Buka lewat HTTPS atau localhost. Firebase belum terkonfigurasi di file://. Anda dapat menjalankan Mode Uji & Diagnosa di tombol toolbar.' : 'Firebase belum dikonfigurasi. Isi konfigurasi window.BANKVERSE_FIREBASE_CONFIG di kode atau uji fitur menggunakan panel Uji & Diagnosa.' }));
+  b.appendChild(E('p',{ class:'msg', text:'Prototipe SIMULASI (Terhubung ke Supabase Database).' }));
+  if(!backendOK){
+    b.appendChild(E('p',{ class:'msg warn', text: location.protocol === 'file:' ? 'Buka lewat HTTPS atau localhost. Backend belum terkonfigurasi di file://. Anda dapat menjalankan Mode Uji & Diagnosa di tombol toolbar.' : 'Database belum dikonfigurasi. Isi konfigurasi VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY di file .env.' }));
   }
   var tabs = E('div',{ class:'mrow' },[
     E('button',{ type:'button', class:'tool', 'aria-pressed':String(mode==='login'), text:'Masuk', on:{ click:function(){ mode='login'; setNote(''); render(); } } }),
@@ -970,13 +1013,13 @@ function render(){
   if(mode === 'register') f.appendChild(field('Nama tampilan','text','f_name','name'));
   f.appendChild(field('Email','email','f_email','email'));
   f.appendChild(field('Kata sandi (min. 8 karakter)','password','f_pw', mode==='register' ? 'new-password' : 'current-password'));
-  f.appendChild(E('button',{ type:'submit', class:'tool', text: mode==='register' ? 'Buat akun' : 'Masuk', disabled: (!fbOK || busy) ? '' : null }));
-  if(!fbOK || busy) f.lastChild.disabled = true; else f.lastChild.removeAttribute('disabled');
+  f.appendChild(E('button',{ type:'submit', class:'tool', text: mode==='register' ? 'Buat akun' : 'Masuk', disabled: (!backendOK || busy) ? '' : null }));
+  if(!backendOK || busy) f.lastChild.disabled = true; else f.lastChild.removeAttribute('disabled');
   f.addEventListener('submit',function(e){ e.preventDefault(); submitForm(); });
   b.appendChild(f);
   if(mode === 'login'){
     b.appendChild(E('button',{ type:'button', class:'tool', text:'Lupa kata sandi', on:{ click:resetPw } }));
-    b.appendChild(E('button',{ type:'button', class:'tool', text:'Masuk dengan NFC', disabled: (fbOK && nfcOK() && !busy) ? null : '', on:{ click:nfcLoginFlow } }));
+    b.appendChild(E('button',{ type:'button', class:'tool', text:'Masuk dengan NFC', disabled: (backendOK && nfcOK() && !busy) ? null : '', on:{ click:nfcLoginFlow } }));
     if(!nfcOK()) b.appendChild(E('p',{ class:'msg', text:'NFC butuh Chrome Android dengan NFC aktif dan origin HTTPS yang aman.' }));
   }
   b.appendChild(E('p',{ class:'msg '+note.k, role:'status', text:note.t }));
@@ -987,7 +1030,7 @@ function renderMember(b){
   b.appendChild(E('h2',{ text:'Dashboard Anggota' }));
   b.appendChild(E('p',{ class:'msg', text:'Semua data di sini berlabel SIMULASI.' }));
   var dl = E('dl',{ class:'kv' });
-  var created = prof.createdAt && prof.createdAt.toDate ? prof.createdAt.toDate().toLocaleDateString('id-ID') : '-';
+  var created = prof.createdAt && prof.createdAt.toDate ? prof.createdAt.toDate().toLocaleDateString('id-ID') : (prof.createdAt ? new Date(prof.createdAt).toLocaleDateString('id-ID') : '-');
   [['ID anggota',prof.memberId],['Nama',prof.displayName],['Email',prof.email],['Status',prof.status],['Bergabung',created]].forEach(function(r){
     dl.appendChild(E('dt',{ text:r[0] })); dl.appendChild(E('dd',{ text:String(r[1]) }));
   });
@@ -1007,8 +1050,10 @@ function renderMember(b){
 }
 
 function logAct(text){
-  if(!db || !auth.currentUser) return Promise.resolve();
-  return db.collection('users').doc(auth.currentUser.uid).collection('activity').add({ action:text, at:firebase.firestore.FieldValue.serverTimestamp() }).catch(function(){});
+  if(db && auth && auth.currentUser){
+    return db.collection('users').doc(auth.currentUser.uid).collection('activity').add({ action:text, at:firebase.firestore.FieldValue.serverTimestamp() }).catch(function(){});
+  }
+  return Promise.resolve();
 }
 async function claimMemberId(uid){
   var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -1026,46 +1071,129 @@ async function claimMemberId(uid){
 async function loadMe(u){
   me = u; prof = null; acts = []; isAdm = false;
   if(!u){ acBtn.textContent = 'Akun'; leaveMember(); stopLive(); return; }
-  var d = await db.collection('users').doc(u.uid).get();
-  prof = d.exists ? d.data() : null;
-  if(prof && prof.status !== 'aktif'){ setNote('Akun berstatus '+prof.status+'. Hubungi pengelola.','err'); await auth.signOut(); return; }
-  if(prof){
-    var s = await db.collection('users').doc(u.uid).collection('activity').orderBy('at','desc').limit(8).get();
-    s.forEach(function(x){ var a = x.data(), t = a.at && a.at.toDate ? a.at.toDate().toLocaleString('id-ID') : ''; acts.push(t+'  '+a.action); });
+
+  if(sbOK){
+    var uid = u.id || u.uid;
+    try{
+      var pRes = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
+      var pData = pRes && pRes.data;
+      var nama = (pData && pData.nama) || (u.user_metadata && u.user_metadata.nama) || (u.email ? u.email.split('@')[0] : 'Member');
+      var role = (pData && pData.role) || 'member';
+      isAdm = (role === 'admin');
+      prof = {
+        memberId: 'BV-' + uid.replace(/-/g,'').slice(0,8).toUpperCase(),
+        displayName: nama,
+        email: u.email,
+        status: 'aktif',
+        createdAt: pData && pData.created_at ? new Date(pData.created_at) : new Date(),
+        role: role
+      };
+      await loadWallet(uid);
+      await loadCards(uid);
+      acBtn.textContent = 'Akun: ' + prof.displayName;
+      if(typeof spawnMember === 'function') spawnMember();
+      return;
+    }catch(e){
+      console.warn('Gagal memuat profil Supabase:', e);
+    }
   }
-  if(prof){ await checkAdmin(u); await loadCards(u.uid); await loadWallet(u.uid); }
-  acBtn.textContent = 'Akun: '+(prof ? prof.displayName : '...');
+
+  if(fbOK && db){
+    var d = await db.collection('users').doc(u.uid).get();
+    prof = d.exists ? d.data() : null;
+    if(prof && prof.status !== 'aktif'){ setNote('Akun berstatus '+prof.status+'. Hubungi pengelola.','err'); await auth.signOut(); return; }
+    if(prof){
+      var s = await db.collection('users').doc(u.uid).collection('activity').orderBy('at','desc').limit(8).get();
+      s.forEach(function(x){ var a = x.data(), t = a.at && a.at.toDate ? a.at.toDate().toLocaleString('id-ID') : ''; acts.push(t+'  '+a.action); });
+    }
+    if(prof){ await checkAdmin(u); await loadCards(u.uid); await loadWallet(u.uid); }
+    acBtn.textContent = 'Akun: '+(prof ? prof.displayName : '...');
+  }
 }
 async function submitForm(){
-  if(!fbOK || busy) return;
+  if(!backendOK || busy) return;
   var name = val('f_name').trim(), email = val('f_email').trim(), pw = val('f_pw');
   if(mode === 'register' && (name.length < 2 || name.length > 40)){ setNote('Nama 2 sampai 40 karakter.','err'); return render(); }
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ setNote('Format email tidak valid.','err'); return render(); }
   if(pw.length < 8){ setNote('Kata sandi minimal 8 karakter.','err'); return render(); }
   busy = true; setNote('Memproses...'); render();
   try{
-    if(mode === 'register'){
-      regBusy = true;
-      var cred = await auth.createUserWithEmailAndPassword(email,pw);
-      await cred.user.updateProfile({ displayName:name });
-      var mid = await claimMemberId(cred.user.uid);
-      await db.collection('users').doc(cred.user.uid).set({ memberId:mid, displayName:name, email:email, status:'aktif', createdAt:firebase.firestore.FieldValue.serverTimestamp() });
-      await logAct('Pendaftaran akun');
-      regBusy = false; await loadMe(cred.user); setNote('Akun dibuat.','ok');
-    } else {
-      var c2 = await auth.signInWithEmailAndPassword(email,pw);
-      await logAct('Masuk'); await loadMe(c2.user); setNote('');
+    if(sbOK){
+      if(mode === 'register'){
+        regBusy = true;
+        var sUp = await supabase.auth.signUp({
+          email: email,
+          password: pw,
+          options: { data: { nama: name } }
+        });
+        regBusy = false;
+        if(sUp.error) throw sUp.error;
+        if(sUp.data && sUp.data.user){
+          if(sUp.data.session){
+            await loadMe(sUp.data.user);
+            setNote('Akun berhasil dibuat dan masuk!','ok');
+          } else {
+            setNote('Pendaftaran berhasil! Silakan Masuk (atau periksa email jika konfirmasi email aktif).','ok');
+          }
+        }
+      } else {
+        var sIn = await supabase.auth.signInWithPassword({ email: email, password: pw });
+        if(sIn.error) throw sIn.error;
+        if(sIn.data && sIn.data.user){
+          await loadMe(sIn.data.user);
+          setNote('');
+        }
+      }
+      busy = false; render();
+      return;
+    }
+
+    if(fbOK){
+      if(mode === 'register'){
+        regBusy = true;
+        var cred = await auth.createUserWithEmailAndPassword(email,pw);
+        await cred.user.updateProfile({ displayName:name });
+        var mid = await claimMemberId(cred.user.uid);
+        await db.collection('users').doc(cred.user.uid).set({ memberId:mid, displayName:name, email:email, status:'aktif', createdAt:firebase.firestore.FieldValue.serverTimestamp() });
+        await logAct('Pendaftaran akun');
+        regBusy = false; await loadMe(cred.user); setNote('Akun dibuat.','ok');
+      } else {
+        var c2 = await auth.signInWithEmailAndPassword(email,pw);
+        await logAct('Masuk'); await loadMe(c2.user); setNote('');
+      }
     }
   }catch(e){ regBusy = false; setNote(errText(e),'err'); }
   busy = false; render();
 }
 async function resetPw(){
   var email = val('f_email').trim();
-  if(!fbOK || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ setNote('Isi email dulu, lalu ketuk Lupa kata sandi.','err'); return render(); }
-  try{ await auth.sendPasswordResetEmail(email); }catch(e){}
+  if(!backendOK || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ setNote('Isi email dulu, lalu ketuk Lupa kata sandi.','err'); return render(); }
+  try{
+    if(sbOK) await supabase.auth.resetPasswordForEmail(email);
+    else if(fbOK) await auth.sendPasswordResetEmail(email);
+  }catch(e){}
   setNote('Jika email terdaftar, tautan pemulihan sudah dikirim.','ok'); render();
 }
-async function logout(){ apanel.hidden = true; try{ await logAct('Keluar'); await auth.signOut(); }catch(e){} setNote(''); }
+async function logout(){
+  apanel.hidden = true;
+  try{
+    await logAct('Keluar');
+    if(sbOK) await supabase.auth.signOut();
+    if(fbOK) await auth.signOut();
+  }catch(e){}
+  me = null; prof = null; setNote(''); loadMe(null); render();
+}
+if(sbOK){
+  supabase.auth.getSession().then(function(res){
+    var u = res.data && res.data.session ? res.data.session.user : null;
+    if(u) loadMe(u).catch(function(){ me = u; prof = null; setNote('Gagal memuat profil.','err'); }).then(function(){ if(!modal.hidden) render(); });
+  });
+  supabase.auth.onAuthStateChange(function(event, session){
+    if(regBusy) return;
+    var u = session ? session.user : null;
+    loadMe(u).catch(function(){ me = u; prof = null; setNote('Gagal memuat profil.','err'); }).then(function(){ if(!modal.hidden) render(); });
+  });
+}
 if(fbOK){
   auth.onAuthStateChanged(function(u){
     if(regBusy) return;
@@ -1107,6 +1235,24 @@ function nfcRead(){
 }
 async function loadCards(uid){
   cards = [];
+  if(sbOK){
+    try{
+      var { data: tabs } = await supabase.from('tabungan').select('*').eq('member_id', uid);
+      if(tabs){
+        cards = tabs.map(function(t, idx){
+          return {
+            id: t.id,
+            label: t.nama || ('Kartu ' + (idx + 1)),
+            status: t.aktif ? 'aktif' : 'nonaktif',
+            t: t.created_at ? new Date(t.created_at).getTime() : 0,
+            lastUsed: t.created_at ? new Date(t.created_at).toLocaleString('id-ID') : ''
+          };
+        });
+        cards.sort(function(a,b){ return b.t - a.t; });
+      }
+    }catch(e){}
+    return;
+  }
   try{
     var s = await db.collection('cards').where('uid','==',uid).get();
     s.forEach(function(d){
@@ -1117,7 +1263,7 @@ async function loadCards(uid){
     cards.sort(function(a,b){ return b.t-a.t; });
   }catch(e){}
 }
-async function refreshCards(){ if(me){ await loadCards(me.uid); } render(); }
+async function refreshCards(){ if(me){ await loadCards(me.id || me.uid); } render(); }
 function renderCards(b){
   b.appendChild(E('p',{ class:'msg', text:'Kartu NFC (berisi token acak aman, tanpa data pribadi)' }));
   if(!nfcOK()) b.appendChild(E('p',{ class:'msg warn', text:'NFC tidak aktif atau tidak didukung pada browser/perangkat ini. Login email tetap tersedia penuh.' }));
@@ -1148,6 +1294,25 @@ function renderCards(b){
 async function makeCard(){
   busy = true; setNote('Membuat kartu...'); render();
   var res;
+  if(sbOK && me){
+    try{
+      var uid = me.id || me.uid;
+      var tokenBaru = 'bv1.' + (window.crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g,'') : String(Date.now())) + '.sec';
+      var namaKartu = 'Kartu ' + (cards.length + 1);
+      var { data: newTab, error: errTab } = await supabase.from('tabungan').insert([{
+        member_id: uid,
+        nama: namaKartu,
+        token: tokenBaru,
+        saldo: 0,
+        aktif: true
+      }]).select().maybeSingle();
+      if(errTab) throw errTab;
+      pending = { cardId: newTab.id, payload: tokenBaru };
+      setNote('');
+      res = { ok:true, msg:'Kartu baru siap. Buka Akun, lalu ketuk Tulis ke tag.', say:'Kartu baru Anda sudah siap.' };
+    }catch(e){ res = { ok:false, msg:'Gagal membuat kartu: ' + (e.message || e), say:'Maaf, kartu belum bisa dibuat.' }; setNote(res.msg,'err'); }
+    busy = false; await refreshCards(); return res;
+  }
   try{
     var r = await fn.httpsCallable('issueCard')({ label:'Kartu '+(cards.length+1) });
     pending = r.data; setNote('');
@@ -1174,6 +1339,13 @@ async function writePending(){
 }
 async function revokeCard(id){
   setNote('Mencabut kartu...'); render();
+  if(sbOK){
+    try{
+      await supabase.from('tabungan').update({ aktif: false }).eq('id', id);
+      setNote('Kartu dicabut.','ok'); toast('Kartu NFC berhasil dicabut.','ok');
+    }catch(e){ setNote((e && e.message) || 'Gagal mencabut kartu','err'); }
+    await refreshCards(); return;
+  }
   try{ await fn.httpsCallable('revokeCard')({ cardId:id }); setNote('Kartu dicabut.','ok'); toast('Kartu NFC berhasil dicabut.','ok'); }
   catch(e){ setNote(nfcErr(e),'err'); }
   await refreshCards();
@@ -1218,6 +1390,45 @@ function txFromDoc(d, uid){
 }
 async function loadWallet(uid){
   wal = null; txs = []; txErr = '';
+  if(sbOK){
+    try{
+      var { data: tabs, error: tErr } = await supabase.from('tabungan').select('*').eq('member_id', uid);
+      var activeTab = tabs && tabs.length ? tabs.find(function(t){ return t.aktif; }) || tabs[0] : null;
+      if(!activeTab){
+        var tokenBaru = 'bv1.' + (window.crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g,'') : String(Date.now())) + '.init';
+        var { data: newTab, error: nErr } = await supabase.from('tabungan').insert([{
+          member_id: uid,
+          nama: 'Tabungan Utama',
+          token: tokenBaru,
+          saldo: 0,
+          aktif: true
+        }]).select().maybeSingle();
+        if(newTab) activeTab = newTab;
+      }
+      currentTabunganId = activeTab ? activeTab.id : null;
+      wal = activeTab ? Number(activeTab.saldo) : 0;
+
+      var { data: txList, error: qErr } = await supabase.from('transaksi').select('*').eq('member_id', uid).order('created_at', { ascending: false }).limit(10);
+      if(txList){
+        txs = txList.map(function(x){
+          var isSetor = x.tipe === 'setor';
+          return {
+            id: x.id,
+            reference: 'TX-' + x.id.replace(/-/g,'').slice(0,8).toUpperCase(),
+            type: isSetor ? 'deposit' : 'withdraw',
+            amount: Number(x.nominal),
+            status: x.status,
+            reason: x.alasan_batal || '',
+            note: x.catatan || '',
+            plus: isSetor,
+            t: x.created_at ? new Date(x.created_at).getTime() : Date.now(),
+            peer: isSetor ? 'Setoran Virtual' : 'Penarikan Virtual'
+          };
+        });
+      }
+    }catch(e){ txErr = 'Riwayat belum bisa dimuat: ' + (e.message || e); }
+    return;
+  }
   try{
     var w = await db.collection('wallets').doc(uid).get();
     if(!w.exists){ await fn.httpsCallable('ensureWallet')(); w = await db.collection('wallets').doc(uid).get(); }
@@ -1228,7 +1439,7 @@ async function loadWallet(uid){
     txs.sort(function(a,b){ return b.t-a.t; }); txs = txs.slice(0,10);
   }catch(e){ txErr = 'Riwayat belum bisa dimuat. Pastikan indeks Firestore sudah di-deploy.'; }
 }
-async function refreshWallet(){ if(me){ await loadWallet(me.uid); } render(); }
+async function refreshWallet(){ if(me){ await loadWallet(me.id || me.uid); } render(); }
 function renderWallet(b){
   b.appendChild(E('p',{ class:'msg', text:'Saldo SIMULASI (bukan uang sungguhan)' }));
   var big = E('p',{ text: wal == null ? 'SIM -' : fmtSim(wal) });
@@ -1297,6 +1508,26 @@ async function submitTx(){
   try{
     if(simNetworkDelay > 0) await new Promise(function(r){ setTimeout(r, simNetworkDelay); });
     if(simOfflineMode) throw { code:'functions/unavailable', message:'Koneksi jaringan terputus (simulasi offline).' };
+    if(sbOK && me){
+      var uid = me.id || me.uid;
+      if(!currentTabunganId) await loadWallet(uid);
+      var tipeSql = t === 'deposit' ? 'setor' : 'tarik';
+      var insRes = await supabase.from('transaksi').insert([{
+        tabungan_id: currentTabunganId,
+        member_id: uid,
+        tipe: tipeSql,
+        nominal: Number(raw),
+        catatan: nt || (TXN[t] + ' BankVerse')
+      }]).select().maybeSingle();
+
+      if(insRes.error) throw insRes.error;
+      await refreshWallet();
+      var insTx = insRes.data;
+      receipt = txs.filter(function(x){ return x.id === (insTx && insTx.id); })[0] || null;
+      txForm = null;
+      setNote(TXN[t] + ' berhasil tercatat di Supabase.', 'ok');
+      busy = false; render(); return;
+    }
     var r = (await fn.httpsCallable('simTx')({ type:t, amount:Number(raw), requestId:txForm.requestId, toMemberId:to, note:nt })).data;
     wal = r.balance; txForm = null;
     setNote(r.ok ? TXN[t]+' berhasil (SIMULASI).' : 'Transaksi gagal: '+r.reason, r.ok ? 'ok' : 'err');
@@ -1304,7 +1535,7 @@ async function submitTx(){
   }catch(e){
     var c = e && e.code || '';
     if(['functions/internal','functions/unavailable','functions/unknown','functions/deadline-exceeded'].indexOf(c) < 0) txForm.requestId = newReqId();
-    setNote(txMsg(e),'err');
+    setNote((e && e.message) || txMsg(e),'err');
   }
   busy = false; render();
 }
