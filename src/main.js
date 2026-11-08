@@ -898,26 +898,26 @@ async function runTx(p){
 
     if(sbOK && me){
       var uid = me.id || me.uid;
-      if(!currentTabunganId) await loadWallet(uid);
-      var tipeSql = p.type === 'deposit' ? 'setor' : 'tarik';
-      var insRes = await supabase.from('transaksi').insert([{
-        tabungan_id: currentTabunganId,
-        member_id: uid,
-        tipe: tipeSql,
-        nominal: p.amount,
-        catatan: p.note || (TXN[p.type] + ' di BankVerse 3D')
-      }]).select().maybeSingle();
-
-      if(insRes.error){
-        return { ok:false, msg:'Transaksi gagal: ' + insRes.error.message, say:'Maaf, transaksi tidak dapat diproses.' };
+      var pig = activePiggy || memberPiggies[0];
+      if(!pig){
+        return { ok:false, msg:'Anda belum memiliki Celengan NFC aktif.', say:'Buka akun dan pesan celengan terlebih dahulu.' };
       }
-      await refreshWallet();
-      var insTx = insRes.data;
-      receipt = txs.filter(function(x){ return x.id === (insTx && insTx.id); })[0] || null;
+      var tipeRpc = p.type === 'deposit' ? 'setor' : 'tarik';
+      var { data, error } = await supabase.rpc('execute_transaction', {
+        p_nfc_uid: pig.nfc_uid,
+        p_tipe: tipeRpc,
+        p_jumlah: p.amount,
+        p_catatan: p.note || ((tipeRpc === 'setor' ? 'Setoran Teller' : 'Penarikan Teller') + ' BankVerse 3D')
+      });
+
+      if(error){
+        return { ok:false, msg:'Transaksi gagal: ' + error.message, say:'Maaf, transaksi ditolak server.' };
+      }
+      await loadMemberData(uid);
       return {
         ok:true,
-        msg: TXN[p.type] + ' ' + fmtSim(p.amount) + ' berhasil (Supabase).',
-        say: 'Selesai, silakan cek saldo tabungan Anda.'
+        msg: (tipeRpc === 'setor' ? 'Setoran' : 'Penarikan') + ' ' + fmtSim(p.amount) + ' berhasil di celengan ' + pig.nama + '.',
+        say: 'Selesai, saldo celengan telah diperbarui.'
       };
     }
 
@@ -926,9 +926,7 @@ async function runTx(p){
     receipt = txs.filter(function(x){ return x.reference === r.reference; })[0] || null;
     return { ok:!!r.ok, msg: r.ok ? TXN[p.type]+' '+fmtSim(p.amount)+' berhasil (SIMULASI).' : 'Transaksi gagal: '+r.reason, say: r.ok ? 'Selesai, silakan cek saldo SIMULASI Anda.' : 'Maaf, transaksi tidak berhasil.' };
   }catch(e){
-    var c = e && e.code || '';
-    if(['functions/internal','functions/unavailable','functions/unknown','functions/deadline-exceeded'].indexOf(c) >= 0) txForm = { type:p.type, requestId:p.requestId };
-    return { ok:false, msg: (e && e.message) || txMsg(e), say:'Maaf, ada kendala koneksi.' };
+    return { ok:false, msg: (e && e.message) || 'Kendala koneksi.', say:'Maaf, ada kendala koneksi.' };
   }
 }
 function stopLive(){ if(liveUnsub){ liveUnsub(); liveUnsub = null; } }
@@ -944,10 +942,14 @@ $('#bMe').addEventListener('click',function(){
   if(mAv) flyTo([mAv.root.position.x,1.2,mAv.root.position.z],20,0.6); else toast('Masuk dulu lewat tombol Akun agar avatarmu muncul di lobi.','');
 });
 
-/* ---------- akun anggota & Database (Tahap 3) ---------- */
-var FBC = window.BANKVERSE_FIREBASE_CONFIG, fbOK = false, auth = null, db = null, fn = null, cards = [], pending = null, isAdm = false, wal = null, txs = [], txForm = null, receipt = null, txErr = '';
-var me = null, prof = null, acts = [], mode = 'login', note = { t:'', k:'' }, busy = false, regBusy = false;
-var currentTabunganId = null;
+/* ---------- akun anggota, Celengan NFC & Database (Tahap 3) ---------- */
+var FBC = window.BANKVERSE_FIREBASE_CONFIG, fbOK = false, auth = null, db = null, fn = null;
+var me = null, prof = null, isAdm = false, acts = [], mode = 'login', note = { t:'', k:'' }, busy = false, regBusy = false;
+var memberTab = 'celengan'; // 'celengan', 'pesanan', 'mutasi', 'profil'
+var memberOrders = [], memberPiggies = [], activePiggy = null, memberTxs = [];
+var txForm = null, receipt = null, txErr = '';
+var nfcFallbackOpen = false;
+var realtimeChannel = null;
 
 /* Backend detection (Supabase & Firebase) */
 var sbOK = Boolean(
@@ -966,8 +968,8 @@ try{
 }catch(e){ fbOK = false; }
 
 var backendOK = sbOK || fbOK;
-
 var modal = $('#authModal'), acBtn = $('#acBtn');
+
 function E(t,p,k){
   var e = document.createElement(t);
   Object.keys(p||{}).forEach(function(a){
@@ -984,574 +986,648 @@ function errText(e){
   if(/already registered|User already exists/i.test(msg)) return 'Email sudah terdaftar. Silakan masuk.';
   if(/invalid login credentials|Invalid email or password/i.test(msg)) return 'Email atau kata sandi salah.';
   if(/password should be at least/i.test(msg)) return 'Kata sandi minimal 6-8 karakter.';
+  if(/Saldo celengan tidak mencukupi/i.test(msg)) return msg;
   var c = e && e.code || '';
   if(c === 'auth/email-already-in-use') return 'Email sudah terdaftar. Silakan masuk.';
   if(c === 'auth/invalid-credential' || c === 'auth/wrong-password' || c === 'auth/user-not-found') return 'Email atau kata sandi salah.';
   if(c === 'auth/weak-password') return 'Kata sandi terlalu lemah (minimal 8 karakter).';
-  if(c === 'auth/too-many-requests') return 'Terlalu banyak percobaan. Coba lagi beberapa menit lagi.';
-  if(c === 'auth/network-request-failed') return 'Koneksi terputus. Periksa internet lalu coba lagi.';
-  if(c === 'permission-denied' || c === 'auth/operation-not-allowed') return 'Akses ditolak. Periksa aturan database.';
   if(msg) return msg;
-  return 'Terjadi kesalahan. Coba lagi.';
+  return 'Terjadi kesalahan sistem. Silakan coba lagi.';
 }
 function setNote(t,k){ note = { t:t, k:k||'' }; }
+function fmtSim(n){ return 'Rp ' + Number(n||0).toLocaleString('id-ID'); }
 
+/* Supabase Realtime Subscription */
+function initRealtime(){
+  if(!sbOK || realtimeChannel) return;
+  try{
+    realtimeChannel = supabase.channel('celengan-realtime-global')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, function(){
+        if(me) loadMemberData(me.id || me.uid);
+        if(isAdm && !apanel.hidden) aTab(atab);
+        toast('Status pesanan celengan diperbarui!', 'ok');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'piggy_banks' }, function(){
+        if(me) loadMemberData(me.id || me.uid);
+        if(isAdm && !apanel.hidden) aTab(atab);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, function(){
+        if(me) loadMemberData(me.id || me.uid);
+        if(isAdm && !apanel.hidden) aTab(atab);
+        toast('Mutasi transaksi celengan berhasil dicatat!', 'ok');
+      })
+      .subscribe();
+  }catch(e){ console.warn('Realtime subscription error:', e); }
+}
+
+/* Load Data Member (Orders, Piggy Banks, Transactions) */
+async function loadMemberData(uid){
+  if(!sbOK || !uid) return;
+  try{
+    // 1. Ambil data Celengan (piggy_banks)
+    var { data: piggies } = await supabase.from('piggy_banks').select('*').eq('owner_id', uid).order('created_at', { ascending: false });
+    memberPiggies = piggies || [];
+    if(memberPiggies.length > 0){
+      activePiggy = (activePiggy && memberPiggies.find(function(p){ return p.id === activePiggy.id; })) || memberPiggies[0];
+    } else {
+      activePiggy = null;
+    }
+
+    // 2. Ambil data Pesanan (orders)
+    var { data: orders } = await supabase.from('orders').select('*').eq('member_id', uid).order('created_at', { ascending: false });
+    memberOrders = orders || [];
+
+    // 3. Ambil Mutasi Transaksi (transactions)
+    var { data: txList } = await supabase.from('transactions').select('*').eq('member_id', uid).order('waktu', { ascending: false }).limit(25);
+    memberTxs = txList || [];
+    if(receipt && memberTxs.length){
+      var updated = memberTxs.find(function(x){ return x.id === receipt.id; });
+      if(updated) receipt = updated;
+    }
+  }catch(e){
+    console.error('loadMemberData error:', e);
+  }
+}
+
+/* Modal Auth / Dashboard Render */
 function render(){
   var b = $('#authBody'); b.textContent = '';
   if(me && prof) return renderMember(b);
-  b.appendChild(E('h2',{ text:'Akun Anggota BANKVERSE' }));
-  b.appendChild(E('p',{ class:'msg', text:'Prototipe SIMULASI (Terhubung ke Supabase Database).' }));
-  if(!backendOK){
-    b.appendChild(E('p',{ class:'msg warn', text: location.protocol === 'file:' ? 'Buka lewat HTTPS atau localhost. Backend belum terkonfigurasi di file://. Anda dapat menjalankan Mode Uji & Diagnosa di tombol toolbar.' : 'Database belum dikonfigurasi. Isi konfigurasi VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY di file .env.' }));
-  }
+
+  b.appendChild(E('h2',{ text:'Bank Virtual & Celengan NFC' }));
+  b.appendChild(E('p',{ class:'msg', text:'Sistem tabungan digital terhubung ke Celengan NTAG NFC & Supabase Realtime.' }));
+
   var tabs = E('div',{ class:'mrow' },[
     E('button',{ type:'button', class:'tool', 'aria-pressed':String(mode==='login'), text:'Masuk', on:{ click:function(){ mode='login'; setNote(''); render(); } } }),
-    E('button',{ type:'button', class:'tool', 'aria-pressed':String(mode==='register'), text:'Daftar', on:{ click:function(){ mode='register'; setNote(''); render(); } } })
+    E('button',{ type:'button', class:'tool', 'aria-pressed':String(mode==='register'), text:'Daftar Baru', on:{ click:function(){ mode='register'; setNote(''); render(); } } })
   ]);
   b.appendChild(tabs);
+
   var f = E('form',{ novalidate:'' }); f.style.display = 'grid'; f.style.gap = '10px';
-  if(mode === 'register') f.appendChild(field('Nama tampilan','text','f_name','name'));
-  f.appendChild(field('Email','email','f_email','email'));
-  f.appendChild(field('Kata sandi (min. 8 karakter)','password','f_pw', mode==='register' ? 'new-password' : 'current-password'));
-  f.appendChild(E('button',{ type:'submit', class:'tool', text: mode==='register' ? 'Buat akun' : 'Masuk', disabled: (!backendOK || busy) ? '' : null }));
-  if(!backendOK || busy) f.lastChild.disabled = true; else f.lastChild.removeAttribute('disabled');
+  if(mode === 'register'){
+    f.appendChild(field('Nama Lengkap','text','f_name','name'));
+    f.appendChild(E('label',{ text:'Daftar Sebagai' },[
+      E('select',{ id:'f_role' },[
+        E('option',{ value:'member', text:'Nasabah (Member) — Pemilik Celengan NFC' }),
+        E('option',{ value:'admin', text:'Administrator — Pengelola & Pengirim Celengan' })
+      ])
+    ]));
+  }
+  f.appendChild(field('Alamat Email','email','f_email','email'));
+  f.appendChild(field('Kata Sandi (min. 8 karakter)','password','f_pw', mode==='register' ? 'new-password' : 'current-password'));
+  f.appendChild(E('button',{ type:'submit', class:'tool', text: mode==='register' ? 'Daftar Sekarang' : 'Masuk ke Akun', disabled: (!backendOK || busy) ? '' : null }));
   f.addEventListener('submit',function(e){ e.preventDefault(); submitForm(); });
   b.appendChild(f);
+
   if(mode === 'login'){
     b.appendChild(E('button',{ type:'button', class:'tool', text:'Lupa kata sandi', on:{ click:resetPw } }));
-    b.appendChild(E('button',{ type:'button', class:'tool', text:'Masuk dengan NFC', disabled: (backendOK && nfcOK() && !busy) ? null : '', on:{ click:nfcLoginFlow } }));
-    if(!nfcOK()) b.appendChild(E('p',{ class:'msg', text:'NFC butuh Chrome Android dengan NFC aktif dan origin HTTPS yang aman.' }));
   }
   b.appendChild(E('p',{ class:'msg '+note.k, role:'status', text:note.t }));
   b.appendChild(E('button',{ type:'button', class:'tool', text:'Tutup', on:{ click:function(){ modal.hidden = true; } } }));
 }
 
+/* Dashboard Anggota / Member */
 function renderMember(b){
-  b.appendChild(E('h2',{ text:'Dashboard Anggota' }));
-  b.appendChild(E('p',{ class:'msg', text:'Semua data di sini berlabel SIMULASI.' }));
-  var dl = E('dl',{ class:'kv' });
-  var created = prof.createdAt && prof.createdAt.toDate ? prof.createdAt.toDate().toLocaleDateString('id-ID') : (prof.createdAt ? new Date(prof.createdAt).toLocaleDateString('id-ID') : '-');
-  [['ID anggota',prof.memberId],['Nama',prof.displayName],['Email',prof.email],['Status',prof.status],['Bergabung',created]].forEach(function(r){
-    dl.appendChild(E('dt',{ text:r[0] })); dl.appendChild(E('dd',{ text:String(r[1]) }));
+  // Header Member
+  var h = E('div',{ class:'dash-header' });
+  var uInfo = E('div',{},[
+    E('h2',{ text: prof.displayName }),
+    E('div',{ class:'dash-user-badge' },[
+      E('span',{ class:'dash-role-badge ' + (isAdm ? 'role-admin' : 'role-member'), text: isAdm ? '👑 Administrator' : '👤 Nasabah' }),
+      E('span',{ style:'font-size:12px;color:var(--ink-secondary)', text: prof.email })
+    ])
+  ]);
+  h.appendChild(uInfo);
+  if(isAdm){
+    h.appendChild(E('button',{ type:'button', class:'tool', style:'background:var(--brand-blue);color:#fff;border:none', text:'👑 Panel Admin', on:{ click:openAdmin } }));
+  }
+  b.appendChild(h);
+
+  // Subtabs Navigation
+  var nav = E('div',{ class:'dash-nav-tabs' });
+  var subtabs = [
+    { id:'celengan', label:'🐷 Celengan Saya' },
+    { id:'pesanan', label:'📦 Pesan Celengan' + (memberOrders.filter(function(o){ return o.status === 'dipesan' || o.status === 'dikirim'; }).length ? ' (' + memberOrders.filter(function(o){ return o.status === 'dipesan' || o.status === 'dikirim'; }).length + ')' : '') },
+    { id:'mutasi', label:'📜 Mutasi Transaksi' },
+    { id:'profil', label:'👤 Profil' }
+  ];
+  subtabs.forEach(function(st){
+    nav.appendChild(E('button',{
+      type:'button',
+      class:'dash-nav-btn ' + (memberTab === st.id ? 'active' : ''),
+      text: st.label,
+      on:{ click:function(){ memberTab = st.id; setNote(''); txForm = null; render(); } }
+    }));
   });
-  b.appendChild(dl);
-  renderWallet(b);
-  renderCards(b);
-  b.appendChild(E('p',{ class:'msg', text:'Riwayat aktivitas' }));
-  var ul = E('ul',{ class:'log' });
-  acts.forEach(function(a){ ul.appendChild(E('li',{ text:a })); });
-  if(!acts.length) ul.appendChild(E('li',{ text:'Belum ada aktivitas.' }));
-  b.appendChild(ul);
+  b.appendChild(nav);
+
+  // Render Subtab Active Content
+  if(memberTab === 'celengan') renderCelenganTab(b);
+  else if(memberTab === 'pesanan') renderPesananTab(b);
+  else if(memberTab === 'mutasi') renderMutasiTab(b);
+  else if(memberTab === 'profil') renderProfilTab(b);
+
   b.appendChild(E('p',{ class:'msg '+note.k, role:'status', text:note.t }));
-  b.appendChild(E('div',{ class:'mrow' },[
+  b.appendChild(E('div',{ class:'mrow', style:'margin-top:12px' },[
     E('button',{ type:'button', class:'tool', text:'Tutup', on:{ click:function(){ modal.hidden = true; } } }),
     E('button',{ type:'button', class:'tool', text:'Keluar', on:{ click:logout } })
-  ].concat(isAdm ? [E('button',{ type:'button', class:'tool', text:'Panel admin', on:{ click:openAdmin } })] : [])));
+  ]));
 }
 
-function logAct(text){
-  if(db && auth && auth.currentUser){
-    return db.collection('users').doc(auth.currentUser.uid).collection('activity').add({ action:text, at:firebase.firestore.FieldValue.serverTimestamp() }).catch(function(){});
+/* Subtab 1: Celengan Saya & Transaksi Atomik */
+function renderCelenganTab(b){
+  if(!memberPiggies.length){
+    var emptyCard = E('div',{ class:'order-item-card', style:'text-align:center;padding:24px' },[
+      E('div',{ style:'font-size:36px;margin-bottom:8px', text:'📦' }),
+      E('h3',{ text:'Belum Ada Celengan NFC Aktif' }),
+      E('p',{ class:'msg', text:'Anda belum memiliki celengan NFC. Silakan ajukan celengan fisik ber-chip NTAG melalui tab Pesan Celengan!' }),
+      E('button',{ type:'button', class:'tool', style:'background:var(--brand-blue);color:#fff;margin:12px auto 0', text:'Pesan Celengan Sekarang ➔', on:{ click:function(){ memberTab = 'pesanan'; render(); } } })
+    ]);
+    b.appendChild(emptyCard);
+    return;
   }
-  return Promise.resolve();
+
+  // Selector Celengan jika punya lebih dari 1
+  if(memberPiggies.length > 1){
+    var selWrap = E('div',{ style:'margin-bottom:8px' },[
+      E('label',{ text:'Pilih Celengan Aktif:' },[
+        E('select',{ id:'piggySelect', on:{ change:function(e){
+          activePiggy = memberPiggies.find(function(p){ return p.id === e.target.value; }) || memberPiggies[0];
+          txForm = null; render();
+        } } }, memberPiggies.map(function(p){
+          return E('option',{ value:p.id, text:p.nama + ' (' + p.nfc_uid + ') — Saldo: ' + fmtSim(p.saldo), selected: (activePiggy && activePiggy.id === p.id) ? '' : null });
+        }))
+      ])
+    ]);
+    b.appendChild(selWrap);
+  }
+
+  var p = activePiggy || memberPiggies[0];
+
+  // Digital Celengan NFC Card
+  var card = E('div',{ class:'digital-bank-card' });
+  card.appendChild(E('div',{ class:'card-top-row' },[
+    E('div',{ class:'card-bank-name' },[
+      E('span',{ text:'🏦 BANKVERSE 3D' })
+    ]),
+    E('div',{ class:'card-chip' })
+  ]));
+  card.appendChild(E('div',{ class:'card-token-number', text:'UID: ' + p.nfc_uid }));
+  card.appendChild(E('div',{ class:'card-balance-lbl', text:'SALDO CELENGAN AKTIF' }));
+  card.appendChild(E('div',{ class:'card-balance-val', text: fmtSim(p.saldo) }));
+  card.appendChild(E('div',{ class:'card-bottom-row' },[
+    E('div',{},[
+      E('div',{ class:'card-account-title', text:'NAMA CELENGAN' }),
+      E('div',{ class:'card-holder-name', text: p.nama })
+    ]),
+    E('span',{ class:'badge-status ' + (p.status === 'aktif' ? 'badge-approved' : 'badge-rejected'), text: p.status.toUpperCase() })
+  ]));
+  b.appendChild(card);
+
+  // Modal / Bukti Struk jika baru transaksi
+  if(receipt) renderReceipt(b);
+
+  // Form Transaksi (Setor / Tarik)
+  if(txForm){
+    renderTxForm(b);
+  } else {
+    var actRow = E('div',{ class:'mrow', style:'margin:10px 0' },[
+      E('button',{ type:'button', class:'tool', style:'background:#10b981;color:#fff;border:none', text:'🟢 Setor (Nabung)', on:{ click:function(){ txForm = { tipe:'setor' }; receipt = null; render(); } } }),
+      E('button',{ type:'button', class:'tool', style:'background:#3b82f6;color:#fff;border:none', text:'🔵 Tarik Tunai', on:{ click:function(){ txForm = { tipe:'tarik' }; receipt = null; render(); } } }),
+      E('button',{ type:'button', class:'tool', text:'🏷️ Scan Tag NFC', on:{ click:scanNfcCelengan } })
+    ]);
+    b.appendChild(actRow);
+  }
+
+  // Riwayat mutasi singkat (3 transaksi terakhir)
+  b.appendChild(E('p',{ class:'msg', style:'margin-top:14px', text:'Transaksi Terakhir Celengan Ini:' }));
+  var miniList = E('ul',{ class:'log' });
+  var recentTxs = memberTxs.filter(function(t){ return t.piggy_bank_id === p.id; }).slice(0, 3);
+  recentTxs.forEach(function(tx){
+    var isSetor = tx.tipe === 'setor';
+    var li = E('li',{ style:'cursor:pointer', text:(isSetor ? 'Setoran: +' : 'Penarikan: -') + fmtSim(tx.jumlah) + ' (Saldo: ' + fmtSim(tx.saldo_sesudah) + ') \u00b7 ' + new Date(tx.waktu).toLocaleTimeString('id-ID') });
+    li.onclick = function(){ receipt = tx; render(); };
+    miniList.appendChild(li);
+  });
+  if(!recentTxs.length) miniList.appendChild(E('li',{ text:'Belum ada transaksi di celengan ini.' }));
+  b.appendChild(miniList);
 }
-async function claimMemberId(uid){
-  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  for(var i=0;i<6;i++){
-    var buf = new Uint8Array(8); crypto.getRandomValues(buf);
-    var id = 'BV-'+Array.from(buf).map(function(x){ return chars[x%chars.length]; }).join('');
-    var ref = db.collection('memberIds').doc(id);
+
+/* Form Setor & Tarik Atomik */
+function renderTxForm(b){
+  var isSetor = txForm.tipe === 'setor';
+  var p = activePiggy || memberPiggies[0];
+  var fWrap = E('div',{ class:'order-item-card', style:'border-color:var(--brand-blue)' });
+  fWrap.appendChild(E('h3',{ text: isSetor ? '🟢 Setor Saldo ke Celengan' : '🔵 Tarik Saldo dari Celengan' }));
+  fWrap.appendChild(E('p',{ class:'msg', text:'Transaksi diproses secara atomik ke database Supabase.' + (!isSetor ? ' Saldo tersedia: ' + fmtSim(p.saldo) : '') }));
+
+  // Preset Chips
+  var presets = isSetor ? [10000, 20000, 50000, 100000, 250000, 500000] : [10000, 20000, 50000, 100000];
+  var pGrid = E('div',{ class:'preset-grid' });
+  presets.forEach(function(nom){
+    pGrid.appendChild(E('button',{ type:'button', class:'preset-chip', text:fmtSim(nom), on:{ click:function(){
+      var input = document.getElementById('t_amount');
+      if(input) input.value = nom;
+    } } }));
+  });
+  fWrap.appendChild(pGrid);
+
+  var f = E('form',{ novalidate:'' }); f.style.display = 'grid'; f.style.gap = '8px';
+  f.appendChild(field('Jumlah Nominal (Rp)','number','t_amount','off'));
+  f.appendChild(field('Catatan Transaksi (opsional)','text','t_catatan','off'));
+
+  var btns = E('div',{ class:'mrow', style:'margin-top:6px' },[
+    E('button',{ type:'submit', class:'tool', style:'background:var(--brand-blue);color:#fff', text: busy ? 'Memproses...' : (isSetor ? 'Konfirmasi Setor Saldo' : 'Konfirmasi Tarik Saldo'), disabled: busy ? '' : null }),
+    E('button',{ type:'button', class:'tool', text:'Batal', on:{ click:function(){ txForm = null; setNote(''); render(); } } })
+  ]);
+  f.appendChild(btns);
+  f.addEventListener('submit',function(e){ e.preventDefault(); submitTxAtomik(); });
+  fWrap.appendChild(f);
+  b.appendChild(fWrap);
+}
+
+/* Eksekusi Transaksi Atomik (RPC Supabase) */
+async function submitTxAtomik(){
+  if(busy || !txForm || !activePiggy) return;
+  var rawNom = Number(val('t_amount'));
+  var cat = val('t_catatan').trim();
+  if(!rawNom || rawNom <= 0){ setNote('Nominal transaksi harus lebih dari Rp 0.','err'); return render(); }
+  if(txForm.tipe === 'tarik' && rawNom > Number(activePiggy.saldo)){
+    setNote('Saldo tidak mencukupi! Tersedia: ' + fmtSim(activePiggy.saldo),'err');
+    return render();
+  }
+
+  busy = true; setNote('Memproses transaksi atomik...'); render();
+  try{
+    var { data, error } = await supabase.rpc('execute_transaction', {
+      p_nfc_uid: activePiggy.nfc_uid,
+      p_tipe: txForm.tipe,
+      p_jumlah: rawNom,
+      p_catatan: cat || (txForm.tipe === 'setor' ? 'Setoran Celengan NFC' : 'Penarikan Celengan NFC')
+    });
+    if(error) throw error;
+
+    await loadMemberData(me.id || me.uid);
+    receipt = memberTxs.find(function(x){ return x.id === data.transaction_id; }) || {
+      id: data.transaction_id,
+      tipe: data.tipe,
+      jumlah: data.jumlah,
+      saldo_sebelum: data.saldo_sebelum,
+      saldo_sesudah: data.saldo_sesudah,
+      catatan: cat,
+      waktu: data.waktu
+    };
+    txForm = null;
+    setNote((data.tipe === 'setor' ? 'Setoran' : 'Penarikan') + ' sebesar ' + fmtSim(data.jumlah) + ' berhasil!', 'ok');
+    toast('Transaksi ' + fmtSim(data.jumlah) + ' berhasil tercatat!', 'ok');
+  }catch(e){
+    setNote(errText(e),'err');
+  }
+  busy = false; render();
+}
+
+/* Struk Bukti Transaksi */
+function renderReceipt(b){
+  var r = receipt;
+  var wrap = E('div',{ class:'order-item-card', style:'background:rgba(59,130,246,0.06);border-color:var(--brand-blue)' });
+  wrap.appendChild(E('h3',{ text:'🧾 BUKTI TRANSAKSI CELENGAN NFC' }));
+  var dl = E('dl',{ class:'kv' });
+  [['ID Transaksi', r.id],['Jenis', r.tipe.toUpperCase()],['Jumlah', fmtSim(r.jumlah)],['Saldo Sebelum', fmtSim(r.saldo_sebelum)],['Saldo Sesudah', fmtSim(r.saldo_sesudah)],['Waktu', new Date(r.waktu).toLocaleString('id-ID')],['Catatan', r.catatan || '-']].forEach(function(row){
+    dl.appendChild(E('dt',{ text:row[0] })); dl.appendChild(E('dd',{ text:String(row[1]) }));
+  });
+  wrap.appendChild(dl);
+  wrap.appendChild(E('div',{ class:'mrow', style:'margin-top:10px' },[
+    E('button',{ type:'button', class:'tool', text:'Salin Bukti', on:{ click:function(){
+      var text = 'BUKTI TRANSAKSI CELENGAN NFC BANKVERSE\nID: ' + r.id + '\nJenis: ' + r.tipe.toUpperCase() + ' ' + fmtSim(r.jumlah) + '\nSaldo Akhir: ' + fmtSim(r.saldo_sesudah) + '\nWaktu: ' + new Date(r.waktu).toLocaleString('id-ID');
+      if(navigator.clipboard) navigator.clipboard.writeText(text).then(function(){ setNote('Bukti disalin ke clipboard.','ok'); render(); });
+    } } }),
+    E('button',{ type:'button', class:'tool', text:'Tutup Bukti', on:{ click:function(){ receipt = null; render(); } } })
+  ]));
+  b.appendChild(wrap);
+}
+
+/* Subtab 2: Pesanan Celengan NFC */
+function renderPesananTab(b){
+  // Form Buat Pesanan Baru
+  var formCard = E('div',{ class:'order-item-card' });
+  formCard.appendChild(E('h3',{ text:'📦 Pesan Celengan Fisik NTAG NFC' }));
+  formCard.appendChild(E('p',{ class:'msg', text:'Admin akan menyiapkan celengan fisik berisi chip NFC NTAG dan mengirimkannya ke alamat Anda.' }));
+  var f = E('form',{ novalidate:'' }); f.style.display = 'grid'; f.style.gap = '8px';
+  f.appendChild(field('Nama Celengan (contoh: Celengan Kurban, Tabungan Liburan)','text','o_nama','off'));
+  f.appendChild(field('Target Nominal Tabungan (Rp, opsional)','number','o_target','off'));
+  f.appendChild(field('Catatan Pesanan / Rencana Penggunaan','text','o_catatan','off'));
+  f.appendChild(E('button',{ type:'submit', class:'tool', style:'background:var(--brand-blue);color:#fff', text: busy ? 'Mengirim...' : 'Kirim Pemesanan Celengan', disabled: busy ? '' : null }));
+  f.addEventListener('submit',function(e){ e.preventDefault(); submitOrder(); });
+  formCard.appendChild(f);
+  b.appendChild(formCard);
+
+  // Daftar Pesanan Member
+  b.appendChild(E('p',{ class:'msg', style:'margin-top:16px', text:'Daftar Status Pengajuan Celengan Anda:' }));
+  if(!memberOrders.length){
+    b.appendChild(E('p',{ style:'font-size:13px;color:var(--ink-secondary)', text:'Belum ada pesanan celengan.' }));
+    return;
+  }
+  memberOrders.forEach(function(o){
+    var card = E('div',{ class:'order-item-card' });
+    var top = E('div',{ class:'order-top' });
+    top.appendChild(E('div',{},[
+      E('div',{ class:'order-title', text: o.nama_celengan }),
+      E('div',{ class:'order-date', text:'Diajukan: ' + new Date(o.created_at).toLocaleDateString('id-ID') })
+    ]));
+    var badgeClass = o.status === 'diterima' ? 'badge-approved' : o.status === 'ditolak' ? 'badge-rejected' : 'badge-pending';
+    top.appendChild(E('span',{ class:'badge-status ' + badgeClass, text: o.status.toUpperCase() }));
+    card.appendChild(top);
+
+    if(o.target_nominal) card.appendChild(E('div',{ class:'order-target', text:'Target: ' + fmtSim(o.target_nominal) }));
+    if(o.nfc_uid) card.appendChild(E('div',{ style:'font-family:monospace;font-size:12px;color:var(--brand-blue)', text:'Tag NFC Tertaut: ' + o.nfc_uid }));
+    if(o.alasan_tolak) card.appendChild(E('div',{ class:'order-reason', text:'Alasan Penolakan: ' + o.alasan_tolak }));
+
+    // Jika status "dikirim", tampilkan tombol konfirmasi diterima
+    if(o.status === 'dikirim'){
+      var actRow = E('div',{ style:'margin-top:8px' });
+      actRow.appendChild(E('button',{
+        type:'button',
+        class:'tool',
+        style:'background:#10b981;color:#fff;border:none',
+        text:'✅ Konfirmasi Celengan Diterima',
+        on:{ click:function(){ confirmReceived(o.id); } }
+      }));
+      card.appendChild(actRow);
+    }
+    b.appendChild(card);
+  });
+}
+
+/* Submit Pesanan Baru */
+async function submitOrder(){
+  if(busy) return;
+  var nama = val('o_nama').trim();
+  var target = val('o_target') ? Number(val('o_target')) : null;
+  var catatan = val('o_catatan').trim();
+  if(!nama || nama.length < 3){ setNote('Nama celengan minimal 3 karakter.','err'); return render(); }
+
+  busy = true; setNote('Mengirim pesanan...'); render();
+  try{
+    var { data, error } = await supabase.from('orders').insert([{
+      member_id: me.id || me.uid,
+      nama_celengan: nama,
+      target_nominal: target,
+      catatan: catatan,
+      status: 'dipesan'
+    }]).select().single();
+    if(error) throw error;
+
+    await loadMemberData(me.id || me.uid);
+    setNote('Pesanan berhasil diajukan! Menunggu verifikasi admin.', 'ok');
+    toast('Pemesanan celengan "' + nama + '" berhasil dikirim!', 'ok');
+  }catch(e){ setNote(errText(e),'err'); }
+  busy = false; render();
+}
+
+/* Konfirmasi Celengan Diterima */
+async function confirmReceived(orderId){
+  if(busy) return;
+  busy = true; setNote('Mengonfirmasi penerimaan celengan...'); render();
+  try{
+    var { data, error } = await supabase.rpc('confirm_order_received', { p_order_id: orderId });
+    if(error) throw error;
+    await loadMemberData(me.id || me.uid);
+    setNote('Celengan berhasil dikonfirmasi diterima! Sekarang celengan aktif di tab Celengan Saya.', 'ok');
+    toast('Celengan fisik berhasil diterima!', 'ok');
+  }catch(e){ setNote(errText(e),'err'); }
+  busy = false; render();
+}
+
+/* Subtab 3: Mutasi Lengkap Transaksi */
+function renderMutasiTab(b){
+  b.appendChild(E('h3',{ text:'📜 Riwayat Lengkap Mutasi Transaksi' }));
+  b.appendChild(E('p',{ class:'msg', text:'Log audit transaksi bersifat append-only (tidak dapat dimanipulasi).' }));
+  if(!memberTxs.length){
+    b.appendChild(E('p',{ style:'font-size:13px;color:var(--ink-secondary)', text:'Belum ada riwayat transaksi.' }));
+    return;
+  }
+  var rows = memberTxs.map(function(t){
+    var isSetor = t.tipe === 'setor';
+    var pig = memberPiggies.find(function(p){ return p.id === t.piggy_bank_id; });
+    var pName = pig ? pig.nama : 'Celengan';
+    var btnStruk = E('button',{ type:'button', class:'tool', style:'min-height:30px;padding:2px 8px;font-size:11px', text:'Lihat', on:{ click:function(){ receipt = t; memberTab = 'celengan'; render(); } } });
+    return [
+      new Date(t.waktu).toLocaleString('id-ID'),
+      pName,
+      isSetor ? '🟢 Setor' : '🔵 Tarik',
+      fmtSim(t.jumlah),
+      fmtSim(t.saldo_sebelum),
+      fmtSim(t.saldo_sesudah),
+      btnStruk
+    ];
+  });
+  b.appendChild(tbl(['Waktu','Celengan','Tipe','Jumlah','Sebelum','Sesudah','Aksi'], rows));
+}
+
+/* Subtab 4: Profil & Pengaturan */
+function renderProfilTab(b){
+  b.appendChild(E('h3',{ text:'👤 Informasi Akun Nasabah' }));
+  var dl = E('dl',{ class:'kv' });
+  [['ID Member', prof.memberId],['Nama Lengkap', prof.displayName],['Email', prof.email],['Role Sistem', prof.role.toUpperCase()],['Terdaftar', prof.createdAt ? new Date(prof.createdAt).toLocaleDateString('id-ID') : '-']].forEach(function(row){
+    dl.appendChild(E('dt',{ text:row[0] })); dl.appendChild(E('dd',{ text:String(row[1]) }));
+  });
+  b.appendChild(dl);
+
+  // Tombol testing eskalasi role (mempermudah pengujian alur Admin dan Member secara langsung)
+  var testBox = E('div',{ class:'order-item-card', style:'margin-top:14px' },[
+    E('h4',{ text:'⚡ Switcher Pengujian Role' }),
+    E('p',{ class:'msg', text:'Ganti role akun ini untuk menguji kedua sisi (Nasabah pemesan vs Admin pengirim).' }),
+    E('div',{ class:'mrow' },[
+      E('button',{ type:'button', class:'tool', text: isAdm ? 'Ganti ke Role Member' : 'Jadikan Akun Ini Admin', on:{ click:toggleRoleTester } })
+    ])
+  ]);
+  b.appendChild(testBox);
+}
+
+/* Ganti role akun pengguna saat pengujian */
+async function toggleRoleTester(){
+  if(!me || busy) return;
+  busy = true; setNote('Mengubah role akun...'); render();
+  try{
+    var newRole = isAdm ? 'member' : 'admin';
+    var { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', me.id || me.uid);
+    if(error) throw error;
+    await loadMe(me);
+    setNote('Role berhasil diubah menjadi: ' + newRole.toUpperCase(), 'ok');
+  }catch(e){ setNote(errText(e),'err'); }
+  busy = false; render();
+}
+
+/* Web NFC & Fallback Manual Scan */
+function nfcOK(){ return 'NDEFReader' in window && window.isSecureContext; }
+
+async function scanNfcCelengan(){
+  if(nfcOK()){
+    setNote('Dekatkan tag NFC Celengan ke belakang HP...'); render();
     try{
-      await db.runTransaction(async function(t){ var s = await t.get(ref); if(s.exists) throw new Error('dup'); t.set(ref,{ uid:uid }); });
-      return id;
-    }catch(e){}
+      var reader = new NDEFReader();
+      var ac = new AbortController();
+      var to = setTimeout(function(){ try{ ac.abort(); }catch(e){} }, 15000);
+      reader.addEventListener('reading', function(ev){
+        clearTimeout(to);
+        var uid = ev.serialNumber;
+        if(!uid && ev.message && ev.message.records && ev.message.records.length){
+          var r = ev.message.records[0];
+          uid = new TextDecoder().decode(r.data);
+        }
+        if(uid){
+          var found = memberPiggies.find(function(p){ return p.nfc_uid === uid || uid.indexOf(p.nfc_uid) !== -1; });
+          if(found){
+            activePiggy = found;
+            toast('Tag NFC terdeteksi: ' + found.nama, 'ok');
+            setNote('Celengan terhubung: ' + found.nama + ' (' + found.nfc_uid + ')', 'ok');
+          } else {
+            toast('Tag NFC dibaca: ' + uid, 'ok');
+            setNote('Tag NFC terdeteksi (' + uid + ') namun belum terdaftar di akun ini.', 'warn');
+          }
+        }
+        render();
+      });
+      await reader.scan({ signal: ac.signal });
+    }catch(e){
+      console.warn('Web NFC error:', e);
+      openNfcFallback();
+    }
+  } else {
+    openNfcFallback();
   }
-  throw new Error('id');
 }
-async function loadMe(u){
-  me = u; prof = null; acts = []; isAdm = false;
-  if(!u){ acBtn.textContent = 'Akun'; leaveMember(); stopLive(); return; }
 
+/* Modal Fallback Input / Seleksi UID Manual */
+function openNfcFallback(){
+  var fallbackUid = prompt(
+    '🏷️ SCAN NFC / INPUT UID MANUAL\n\n' +
+    'Web NFC hanya aktif di Chrome Android + HTTPS.\n' +
+    'Di perangkat/laptop ini, silakan masukkan UID NFC celengan Anda secara manual:',
+    activePiggy ? activePiggy.nfc_uid : (memberPiggies.length ? memberPiggies[0].nfc_uid : 'NTAG-001')
+  );
+  if(fallbackUid){
+    var cleaned = fallbackUid.trim();
+    var match = memberPiggies.find(function(p){ return p.nfc_uid === cleaned; });
+    if(match){
+      activePiggy = match;
+      setNote('Celengan aktif: ' + match.nama + ' (' + match.nfc_uid + ')', 'ok');
+      toast('Celengan terpilih: ' + match.nama, 'ok');
+    } else {
+      setNote('UID celengan: "' + cleaned + '" terpilih.', 'ok');
+    }
+    render();
+  }
+}
+
+/* Auth Actions */
+async function submitForm(){
+  if(!backendOK || busy) return;
+  var email = val('f_email').trim(), pw = val('f_pw'), name = val('f_name').trim(), role = val('f_role') || 'member';
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ setNote('Format email tidak valid.','err'); return render(); }
+  if(pw.length < 8){ setNote('Kata sandi minimal 8 karakter.','err'); return render(); }
+
+  busy = true; setNote('Menghubungkan ke Supabase...'); render();
+  try{
+    if(mode === 'register'){
+      if(name.length < 2){ setNote('Nama lengkap minimal 2 karakter.','err'); busy = false; return render(); }
+      regBusy = true;
+      var { data: sUp, error: upErr } = await supabase.auth.signUp({
+        email: email,
+        password: pw,
+        options: { data: { nama: name, role: role } }
+      });
+      regBusy = false;
+      if(upErr) throw upErr;
+      if(sUp && sUp.user){
+        if(sUp.session){
+          await loadMe(sUp.user);
+          setNote('Akun berhasil terdaftar dan masuk!','ok');
+        } else {
+          setNote('Pendaftaran berhasil! Silakan periksa email Anda atau langsung Masuk.','ok');
+        }
+      }
+    } else {
+      var { data: sIn, error: inErr } = await supabase.auth.signInWithPassword({ email: email, password: pw });
+      if(inErr) throw inErr;
+      if(sIn && sIn.user){
+        await loadMe(sIn.user);
+        setNote('');
+      }
+    }
+  }catch(e){ setNote(errText(e),'err'); }
+  busy = false; render();
+}
+
+async function resetPw(){
+  var email = val('f_email').trim();
+  if(!email){ setNote('Isi email Anda terlebih dahulu.','err'); return render(); }
+  try{ await supabase.auth.resetPasswordForEmail(email); }catch(e){}
+  setNote('Tautan pemulihan kata sandi sudah dikirim ke email Anda.','ok'); render();
+}
+
+async function logout(){
+  apanel.hidden = true;
+  try{ await supabase.auth.signOut(); }catch(e){}
+  me = null; prof = null; isAdm = false; memberOrders = []; memberPiggies = []; memberTxs = []; activePiggy = null;
+  setNote(''); loadMe(null); render();
+}
+
+async function loadMe(u){
+  me = u; prof = null; isAdm = false;
+  if(!u){
+    acBtn.textContent = 'Akun';
+    if(typeof leaveMember === 'function') leaveMember();
+    return;
+  }
   if(sbOK){
     var uid = u.id || u.uid;
     try{
-      var pRes = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
-      var pData = pRes && pRes.data;
-      var nama = (pData && pData.nama) || (u.user_metadata && u.user_metadata.nama) || (u.email ? u.email.split('@')[0] : 'Member');
-      var role = (pData && pData.role) || 'member';
+      var { data: pData } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
+      var nama = (pData && pData.nama) || (u.user_metadata && u.user_metadata.nama) || (u.email ? u.email.split('@')[0] : 'Nasabah');
+      var role = (pData && pData.role) || (u.user_metadata && u.user_metadata.role) || 'member';
       isAdm = (role === 'admin');
       prof = {
         memberId: 'BV-' + uid.replace(/-/g,'').slice(0,8).toUpperCase(),
         displayName: nama,
         email: u.email,
-        status: 'aktif',
-        createdAt: pData && pData.created_at ? new Date(pData.created_at) : new Date(),
-        role: role
+        role: role,
+        createdAt: pData && pData.created_at ? new Date(pData.created_at) : new Date()
       };
-      await loadWallet(uid);
-      await loadCards(uid);
-      acBtn.textContent = 'Akun: ' + prof.displayName;
+      await loadMemberData(uid);
+      initRealtime();
+      acBtn.textContent = (isAdm ? '👑 ' : '') + 'Akun: ' + prof.displayName;
       if(typeof spawnMember === 'function') spawnMember();
-      return;
     }catch(e){
       console.warn('Gagal memuat profil Supabase:', e);
     }
   }
+}
 
-  if(fbOK && db){
-    var d = await db.collection('users').doc(u.uid).get();
-    prof = d.exists ? d.data() : null;
-    if(prof && prof.status !== 'aktif'){ setNote('Akun berstatus '+prof.status+'. Hubungi pengelola.','err'); await auth.signOut(); return; }
-    if(prof){
-      var s = await db.collection('users').doc(u.uid).collection('activity').orderBy('at','desc').limit(8).get();
-      s.forEach(function(x){ var a = x.data(), t = a.at && a.at.toDate ? a.at.toDate().toLocaleString('id-ID') : ''; acts.push(t+'  '+a.action); });
-    }
-    if(prof){ await checkAdmin(u); await loadCards(u.uid); await loadWallet(u.uid); }
-    acBtn.textContent = 'Akun: '+(prof ? prof.displayName : '...');
-  }
-}
-async function submitForm(){
-  if(!backendOK || busy) return;
-  var name = val('f_name').trim(), email = val('f_email').trim(), pw = val('f_pw');
-  if(mode === 'register' && (name.length < 2 || name.length > 40)){ setNote('Nama 2 sampai 40 karakter.','err'); return render(); }
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ setNote('Format email tidak valid.','err'); return render(); }
-  if(pw.length < 8){ setNote('Kata sandi minimal 8 karakter.','err'); return render(); }
-  busy = true; setNote('Memproses...'); render();
-  try{
-    if(sbOK){
-      if(mode === 'register'){
-        regBusy = true;
-        var sUp = await supabase.auth.signUp({
-          email: email,
-          password: pw,
-          options: { data: { nama: name } }
-        });
-        regBusy = false;
-        if(sUp.error) throw sUp.error;
-        if(sUp.data && sUp.data.user){
-          if(sUp.data.session){
-            await loadMe(sUp.data.user);
-            setNote('Akun berhasil dibuat dan masuk!','ok');
-          } else {
-            setNote('Pendaftaran berhasil! Silakan Masuk (atau periksa email jika konfirmasi email aktif).','ok');
-          }
-        }
-      } else {
-        var sIn = await supabase.auth.signInWithPassword({ email: email, password: pw });
-        if(sIn.error) throw sIn.error;
-        if(sIn.data && sIn.data.user){
-          await loadMe(sIn.data.user);
-          setNote('');
-        }
-      }
-      busy = false; render();
-      return;
-    }
-
-    if(fbOK){
-      if(mode === 'register'){
-        regBusy = true;
-        var cred = await auth.createUserWithEmailAndPassword(email,pw);
-        await cred.user.updateProfile({ displayName:name });
-        var mid = await claimMemberId(cred.user.uid);
-        await db.collection('users').doc(cred.user.uid).set({ memberId:mid, displayName:name, email:email, status:'aktif', createdAt:firebase.firestore.FieldValue.serverTimestamp() });
-        await logAct('Pendaftaran akun');
-        regBusy = false; await loadMe(cred.user); setNote('Akun dibuat.','ok');
-      } else {
-        var c2 = await auth.signInWithEmailAndPassword(email,pw);
-        await logAct('Masuk'); await loadMe(c2.user); setNote('');
-      }
-    }
-  }catch(e){ regBusy = false; setNote(errText(e),'err'); }
-  busy = false; render();
-}
-async function resetPw(){
-  var email = val('f_email').trim();
-  if(!backendOK || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ setNote('Isi email dulu, lalu ketuk Lupa kata sandi.','err'); return render(); }
-  try{
-    if(sbOK) await supabase.auth.resetPasswordForEmail(email);
-    else if(fbOK) await auth.sendPasswordResetEmail(email);
-  }catch(e){}
-  setNote('Jika email terdaftar, tautan pemulihan sudah dikirim.','ok'); render();
-}
-async function logout(){
-  apanel.hidden = true;
-  try{
-    await logAct('Keluar');
-    if(sbOK) await supabase.auth.signOut();
-    if(fbOK) await auth.signOut();
-  }catch(e){}
-  me = null; prof = null; setNote(''); loadMe(null); render();
-}
 if(sbOK){
   supabase.auth.getSession().then(function(res){
     var u = res.data && res.data.session ? res.data.session.user : null;
-    if(u) loadMe(u).catch(function(){ me = u; prof = null; setNote('Gagal memuat profil.','err'); }).then(function(){ if(!modal.hidden) render(); });
+    if(u) loadMe(u).then(function(){ if(!modal.hidden) render(); });
   });
   supabase.auth.onAuthStateChange(function(event, session){
     if(regBusy) return;
     var u = session ? session.user : null;
-    loadMe(u).catch(function(){ me = u; prof = null; setNote('Gagal memuat profil.','err'); }).then(function(){ if(!modal.hidden) render(); });
-  });
-}
-if(fbOK){
-  auth.onAuthStateChanged(function(u){
-    if(regBusy) return;
-    loadMe(u).catch(function(){ me = u; prof = null; setNote('Gagal memuat profil.','err'); }).then(function(){ if(!modal.hidden) render(); });
+    loadMe(u).then(function(){ if(!modal.hidden) render(); });
   });
 }
 
-/* ---------- kartu NFC & Web NFC (Tahap 4) ---------- */
-function nfcOK(){ return 'NDEFReader' in window && window.isSecureContext; }
-function nfcErr(e){
-  var c = e && (e.code || e.name) || '';
-  if(c.indexOf('functions/') === 0) return e.message || 'Permintaan ditolak server.';
-  if(c === 'NotAllowedError') return 'Izin NFC ditolak. Izinkan NFC untuk situs ini di Chrome Android.';
-  if(c === 'NotSupportedError') return 'NFC tidak didukung atau belum diaktifkan di HP ini.';
-  if(c === 'timeout') return 'Waktu habis. Dekatkan kartu lalu coba lagi.';
-  if(c === 'bukan') return 'Tag ini bukan kartu BANKVERSE.';
-  if(c === 'NetworkError' || c === 'readerr') return 'Tag gagal dibaca. Coba dekatkan lagi.';
-  return 'Operasi NFC gagal. Coba lagi.';
-}
-function nfcWrite(text){ return new NDEFReader().write({ records:[{ recordType:'text', data:text }] },{ overwrite:true }); }
-function nfcRead(){
-  return new Promise(function(res,rej){
-    var r = new NDEFReader(), ac = new AbortController(), done = false;
-    function fin(f,v){ if(done) return; done = true; clearTimeout(to); try{ ac.abort(); }catch(e){} f(v); }
-    var to = setTimeout(function(){ fin(rej,{ code:'timeout' }); },20000);
-    r.addEventListener('reading',function(ev){
-      var recs = ev.message.records;
-      for(var i=0;i<recs.length;i++){
-        if(recs[i].recordType === 'text'){
-          var t = new TextDecoder(recs[i].encoding || 'utf-8').decode(recs[i].data);
-          if(t.indexOf('bv1.') === 0) return fin(res,t);
-        }
-      }
-      fin(rej,{ code:'bukan' });
-    });
-    r.addEventListener('readingerror',function(){ fin(rej,{ code:'readerr' }); });
-    r.scan({ signal:ac.signal }).catch(function(e){ fin(rej,e); });
-  });
-}
-async function loadCards(uid){
-  cards = [];
-  if(sbOK){
-    try{
-      var { data: tabs } = await supabase.from('tabungan').select('*').eq('member_id', uid);
-      if(tabs){
-        cards = tabs.map(function(t, idx){
-          return {
-            id: t.id,
-            label: t.nama || ('Kartu ' + (idx + 1)),
-            status: t.aktif ? 'aktif' : 'nonaktif',
-            t: t.created_at ? new Date(t.created_at).getTime() : 0,
-            lastUsed: t.created_at ? new Date(t.created_at).toLocaleString('id-ID') : ''
-          };
-        });
-        cards.sort(function(a,b){ return b.t - a.t; });
-      }
-    }catch(e){}
-    return;
-  }
-  try{
-    var s = await db.collection('cards').where('uid','==',uid).get();
-    s.forEach(function(d){
-      var x = d.data();
-      cards.push({ id:d.id, label:x.label, status:x.status, t:x.issuedAt && x.issuedAt.toMillis ? x.issuedAt.toMillis() : 0,
-        lastUsed:x.lastUsedAt && x.lastUsedAt.toDate ? x.lastUsedAt.toDate().toLocaleString('id-ID') : '' });
-    });
-    cards.sort(function(a,b){ return b.t-a.t; });
-  }catch(e){}
-}
-async function refreshCards(){ if(me){ await loadCards(me.id || me.uid); } render(); }
-function renderCards(b){
-  b.appendChild(E('p',{ class:'msg', text:'Kartu NFC (berisi token acak aman, tanpa data pribadi)' }));
-  if(!nfcOK()) b.appendChild(E('p',{ class:'msg warn', text:'NFC tidak aktif atau tidak didukung pada browser/perangkat ini. Login email tetap tersedia penuh.' }));
-  var ul = E('ul',{ class:'log' });
-  cards.forEach(function(c){
-    var li = E('li',{ text:(c.label || 'Kartu')+' \u00b7 '+c.status+(c.lastUsed ? ' \u00b7 dipakai '+c.lastUsed : '') });
-    if(c.status === 'aktif'){
-      li.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px';
-      li.appendChild(E('button',{ type:'button', class:'tool', text:'Cabut', on:{ click:function(){ revokeCard(c.id); } } }));
-    }
-    ul.appendChild(li);
-  });
-  if(!cards.length) ul.appendChild(E('li',{ text:'Belum ada kartu.' }));
-  b.appendChild(ul);
-  if(pending){
-    b.appendChild(E('p',{ class:'msg', text:'Kartu baru siap. Ketuk Tulis ke tag, lalu dekatkan tag NFC ke belakang HP.' }));
-    b.appendChild(E('div',{ class:'mrow' },[
-      E('button',{ type:'button', class:'tool', text:'Tulis ke tag', disabled: nfcOK() && !busy ? null : '', on:{ click:writePending } }),
-      E('button',{ type:'button', class:'tool', text:'Batal', on:{ click:function(){ var id = pending.cardId; pending = null; revokeCard(id); } } })
-    ]));
-  } else {
-    b.appendChild(E('div',{ class:'mrow' },[
-      E('button',{ type:'button', class:'tool', text:'Buat kartu baru', disabled: busy ? '' : null, on:{ click:newCard } }),
-      E('button',{ type:'button', class:'tool', text:'Uji baca kartu', disabled: nfcOK() && !busy ? null : '', on:{ click:testRead } })
-    ]));
-  }
-}
-async function makeCard(){
-  busy = true; setNote('Membuat kartu...'); render();
-  var res;
-  if(sbOK && me){
-    try{
-      var uid = me.id || me.uid;
-      var tokenBaru = 'bv1.' + (window.crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g,'') : String(Date.now())) + '.sec';
-      var namaKartu = 'Kartu ' + (cards.length + 1);
-      var { data: newTab, error: errTab } = await supabase.from('tabungan').insert([{
-        member_id: uid,
-        nama: namaKartu,
-        token: tokenBaru,
-        saldo: 0,
-        aktif: true
-      }]).select().maybeSingle();
-      if(errTab) throw errTab;
-      pending = { cardId: newTab.id, payload: tokenBaru };
-      setNote('');
-      res = { ok:true, msg:'Kartu baru siap. Buka Akun, lalu ketuk Tulis ke tag.', say:'Kartu baru Anda sudah siap.' };
-    }catch(e){ res = { ok:false, msg:'Gagal membuat kartu: ' + (e.message || e), say:'Maaf, kartu belum bisa dibuat.' }; setNote(res.msg,'err'); }
-    busy = false; await refreshCards(); return res;
-  }
-  try{
-    var r = await fn.httpsCallable('issueCard')({ label:'Kartu '+(cards.length+1) });
-    pending = r.data; setNote('');
-    res = { ok:true, msg:'Kartu baru siap. Buka Akun, lalu ketuk Tulis ke tag.', say:'Kartu baru Anda sudah siap.' };
-  }catch(e){ res = { ok:false, msg:nfcErr(e), say:'Maaf, kartu belum bisa dibuat.' }; setNote(res.msg,'err'); }
-  busy = false; await refreshCards(); return res;
-}
-function newCard(){
-  if(busy) return;
-  if(mAv){
-    if(!startJob('cs',makeCard)){ setNote('Tunggu layanan sebelumnya selesai.','err'); return render(); }
-    modal.hidden = true; toast('Menuju Customer Service untuk kartu baru...',''); return;
-  }
-  return makeCard();
-}
-async function writePending(){
-  if(!pending || busy) return; busy = true; setNote('Dekatkan tag NFC ke belakang HP...'); render();
-  try{
-    await nfcWrite(pending.payload); pending = null;
-    toast('Kartu berhasil ditulis ke tag NFC.','ok');
-    setNote('Kartu berhasil ditulis. Uji dengan keluar lalu Masuk dengan NFC.','ok');
-  }catch(e){ setNote(nfcErr(e),'err'); }
-  busy = false; await refreshCards();
-}
-async function revokeCard(id){
-  setNote('Mencabut kartu...'); render();
-  if(sbOK){
-    try{
-      await supabase.from('tabungan').update({ aktif: false }).eq('id', id);
-      setNote('Kartu dicabut.','ok'); toast('Kartu NFC berhasil dicabut.','ok');
-    }catch(e){ setNote((e && e.message) || 'Gagal mencabut kartu','err'); }
-    await refreshCards(); return;
-  }
-  try{ await fn.httpsCallable('revokeCard')({ cardId:id }); setNote('Kartu dicabut.','ok'); toast('Kartu NFC berhasil dicabut.','ok'); }
-  catch(e){ setNote(nfcErr(e),'err'); }
-  await refreshCards();
-}
-async function testRead(){
-  if(busy) return; busy = true; setNote('Dekatkan kartu ke belakang HP...'); render();
-  try{
-    var p = await nfcRead(), id = p.split('.')[1], c = cards.filter(function(x){ return x.id === id; })[0];
-    setNote(c ? 'Kartu dikenali: '+(c.label || 'Kartu')+' ('+c.status+').' : 'Kartu BANKVERSE ini bukan milik akun ini.', c && c.status === 'aktif' ? 'ok' : 'err');
-    toast(c ? 'Kartu terdeteksi: '+(c.label||'Kartu') : 'Kartu dikenali sebagai token eksternal.','ok');
-  }catch(e){ setNote(nfcErr(e),'err'); }
-  busy = false; render();
-}
-async function nfcLoginFlow(){
-  if(busy || !fbOK || !nfcOK()) return; busy = true; setNote('Dekatkan kartu ke belakang HP...'); render();
-  try{
-    var p = await nfcRead();
-    var r = await fn.httpsCallable('nfcLogin')({ payload:p });
-    await auth.signInWithCustomToken(r.data.token); setNote('');
-    toast('Masuk berhasil menggunakan kartu NFC.','ok');
-  }catch(e){ setNote(nfcErr(e),'err'); }
-  busy = false; render();
-}
-
-/* ---------- saldo dan transaksi simulasi (Tahap 5) ---------- */
-var TXN = { deposit:'Setoran', withdraw:'Penarikan', transfer:'Transfer' };
-function fmtSim(n){ return 'SIM '+Number(n).toLocaleString('id-ID'); }
-function newReqId(){
-  if(window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g,'');
-  var b = new Uint8Array(16); crypto.getRandomValues(b); return Array.from(b).map(function(x){ return ('0'+x.toString(16)).slice(-2); }).join('');
-}
-function txMsg(e){
-  var c = e && e.code || '';
-  if(c.indexOf('functions/') === 0 && c !== 'functions/internal' && c !== 'functions/unavailable' && c !== 'functions/unknown' && c !== 'functions/deadline-exceeded') return e.message;
-  return 'Koneksi bermasalah. Hasil belum pasti: ketuk Kirim lagi, permintaan yang sama tidak akan diproses dua kali (proteksi anti transaksi ganda).';
-}
-function txFromDoc(d, uid){
-  var x = d.data();
-  return { id:d.id, reference:x.reference, type:x.type, amount:x.amount, status:x.status, reason:x.reason || '', note:x.note || '',
-    plus: x.type === 'deposit' || (x.type === 'transfer' && x.toUid === uid),
-    t: x.createdAt && x.createdAt.toMillis ? x.createdAt.toMillis() : 0, peer: x.type === 'transfer' ? (x.toUid === uid ? x.fromMemberId : x.toMemberId) : '' };
-}
-async function loadWallet(uid){
-  wal = null; txs = []; txErr = '';
-  if(sbOK){
-    try{
-      var { data: tabs, error: tErr } = await supabase.from('tabungan').select('*').eq('member_id', uid);
-      var activeTab = tabs && tabs.length ? tabs.find(function(t){ return t.aktif; }) || tabs[0] : null;
-      if(!activeTab){
-        var tokenBaru = 'bv1.' + (window.crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g,'') : String(Date.now())) + '.init';
-        var { data: newTab, error: nErr } = await supabase.from('tabungan').insert([{
-          member_id: uid,
-          nama: 'Tabungan Utama',
-          token: tokenBaru,
-          saldo: 0,
-          aktif: true
-        }]).select().maybeSingle();
-        if(newTab) activeTab = newTab;
-      }
-      currentTabunganId = activeTab ? activeTab.id : null;
-      wal = activeTab ? Number(activeTab.saldo) : 0;
-
-      var { data: txList, error: qErr } = await supabase.from('transaksi').select('*').eq('member_id', uid).order('created_at', { ascending: false }).limit(10);
-      if(txList){
-        txs = txList.map(function(x){
-          var isSetor = x.tipe === 'setor';
-          return {
-            id: x.id,
-            reference: 'TX-' + x.id.replace(/-/g,'').slice(0,8).toUpperCase(),
-            type: isSetor ? 'deposit' : 'withdraw',
-            amount: Number(x.nominal),
-            status: x.status,
-            reason: x.alasan_batal || '',
-            note: x.catatan || '',
-            plus: isSetor,
-            t: x.created_at ? new Date(x.created_at).getTime() : Date.now(),
-            peer: isSetor ? 'Setoran Virtual' : 'Penarikan Virtual'
-          };
-        });
-      }
-    }catch(e){ txErr = 'Riwayat belum bisa dimuat: ' + (e.message || e); }
-    return;
-  }
-  try{
-    var w = await db.collection('wallets').doc(uid).get();
-    if(!w.exists){ await fn.httpsCallable('ensureWallet')(); w = await db.collection('wallets').doc(uid).get(); }
-    wal = w.exists ? w.data().simulationBalance : null;
-    var q = await Promise.all(['fromUid','toUid'].map(function(f){ return db.collection('transactions').where(f,'==',uid).orderBy('createdAt','desc').limit(10).get(); }));
-    var seen = {};
-    q.forEach(function(s){ s.forEach(function(d){ if(!seen[d.id]){ seen[d.id] = 1; txs.push(txFromDoc(d,uid)); } }); });
-    txs.sort(function(a,b){ return b.t-a.t; }); txs = txs.slice(0,10);
-  }catch(e){ txErr = 'Riwayat belum bisa dimuat. Pastikan indeks Firestore sudah di-deploy.'; }
-}
-async function refreshWallet(){ if(me){ await loadWallet(me.id || me.uid); } render(); }
-function renderWallet(b){
-  b.appendChild(E('p',{ class:'msg', text:'Saldo SIMULASI (bukan uang sungguhan)' }));
-  var big = E('p',{ text: wal == null ? 'SIM -' : fmtSim(wal) });
-  big.style.cssText = 'margin:0;font-family:var(--font-display);font-size:22px'; b.appendChild(big);
-  if(receipt) renderReceipt(b);
-  if(txForm){ renderTxForm(b); }
-  else {
-    b.appendChild(E('div',{ class:'mrow' }, ['deposit','withdraw','transfer'].map(function(t){
-      return E('button',{ type:'button', class:'tool', text:t === 'deposit' ? 'Setor' : t === 'withdraw' ? 'Tarik' : 'Transfer', disabled: (busy || wal == null) ? '' : null,
-        on:{ click:function(){ txForm = { type:t, requestId:newReqId() }; receipt = null; setNote(''); render(); } } });
-    })));
-  }
-  b.appendChild(E('p',{ class:'msg', text:'Riwayat transaksi (ketuk untuk bukti)' }));
-  var ul = E('ul',{ class:'log' });
-  txs.forEach(function(x){
-    var li = E('li',{ text:TXN[x.type]+' \u00b7 '+(x.plus ? '+' : '-')+fmtSim(x.amount)+' \u00b7 '+x.status+(x.t ? ' \u00b7 '+new Date(x.t).toLocaleString('id-ID') : '') });
-    li.style.cursor = 'pointer'; li.tabIndex = 0;
-    function open(){ receipt = x; render(); }
-    li.addEventListener('click',open); li.addEventListener('keydown',function(e){ if(e.key === 'Enter') open(); });
-    ul.appendChild(li);
-  });
-  if(!txs.length) ul.appendChild(E('li',{ text: txErr || 'Belum ada transaksi.' }));
-  b.appendChild(ul);
-}
-function renderReceipt(b){
-  var r = receipt, dl = E('dl',{ class:'kv' });
-  [['Referensi',r.reference],['Jenis',TXN[r.type]],['Nominal',fmtSim(r.amount)],['Status',r.status+(r.reason ? ' ('+r.reason+')' : '')],
-   ['Waktu', r.t ? new Date(r.t).toLocaleString('id-ID') : '-'],['Pihak lain', r.peer || '-'],['Catatan', r.note || '-']].forEach(function(p){
-    dl.appendChild(E('dt',{ text:p[0] })); dl.appendChild(E('dd',{ text:String(p[1]) }));
-  });
-  b.appendChild(E('p',{ class:'msg', text:'BUKTI TRANSAKSI SIMULASI' })); b.appendChild(dl);
-  b.appendChild(E('p',{ class:'msg', text:'Bukti ini hanya simulasi dan bukan bukti transaksi keuangan sungguhan.' }));
-  b.appendChild(E('div',{ class:'mrow' },[
-    E('button',{ type:'button', class:'tool', text:'Salin bukti', on:{ click:function(){
-      var t = 'BUKTI SIMULASI BANKVERSE\n'+r.reference+'\n'+TXN[r.type]+' '+fmtSim(r.amount)+'\nStatus: '+r.status;
-      if(navigator.clipboard) navigator.clipboard.writeText(t).then(function(){ setNote('Bukti disalin.','ok'); render(); }).catch(function(){});
-    } } }),
-    E('button',{ type:'button', class:'tool', text:'Tutup bukti', on:{ click:function(){ receipt = null; render(); } } })
-  ]));
-}
-function renderTxForm(b){
-  var t = txForm.type;
-  b.appendChild(E('p',{ class:'msg', text:TXN[t]+' virtual (SIMULASI)' }));
-  var f = E('form',{ novalidate:'' }); f.style.cssText = 'display:grid;gap:8px';
-  if(t === 'transfer') f.appendChild(field('ID anggota tujuan (BV-XXXXXXXX)','text','t_to','off'));
-  f.appendChild(field('Nominal SIM (bilangan bulat, maks. 10.000.000)','text','t_amt','off'));
-  f.querySelector('#t_amt').setAttribute('inputmode','numeric');
-  if(t === 'transfer') f.appendChild(field('Catatan (opsional)','text','t_note','off'));
-  var go = E('button',{ type:'submit', class:'tool', text: busy ? 'Memproses...' : 'Kirim' }); if(busy) go.disabled = true;
-  f.appendChild(E('div',{ class:'mrow' },[go, E('button',{ type:'button', class:'tool', text:'Batal', on:{ click:function(){ txForm = null; setNote(''); render(); } } })]));
-  f.addEventListener('submit',function(e){ e.preventDefault(); submitTx(); });
-  b.appendChild(f);
-  b.appendChild(E('p',{ class:'msg '+note.k, role:'status', text:note.t }));
-}
-async function submitTx(){
-  if(busy || !txForm) return;
-  var t = txForm.type, raw = val('t_amt').replace(/[.\s]/g,''), to = val('t_to').trim().toUpperCase(), nt = val('t_note').trim();
-  if(!/^\d{1,8}$/.test(raw) || Number(raw) < 1 || Number(raw) > 10000000){ setNote('Nominal harus bilangan bulat 1 sampai 10.000.000.','err'); return render(); }
-  if(t === 'transfer' && !/^BV-[A-HJ-NP-Z2-9]{8}$/.test(to)){ setNote('Format ID anggota tujuan tidak valid.','err'); return render(); }
-  if(mAv){
-    var sent = { type:t, amount:Number(raw), requestId:txForm.requestId, toMemberId:to, note:nt };
-    if(!startJob('teller',function(){ return runTx(sent); })){ setNote('Tunggu layanan sebelumnya selesai.','err'); return render(); }
-    txForm = null; modal.hidden = true; toast('Mengambil nomor antrean di lobi...',''); return;
-  }
-  busy = true; setNote('Memproses...'); render();
-  try{
-    if(simNetworkDelay > 0) await new Promise(function(r){ setTimeout(r, simNetworkDelay); });
-    if(simOfflineMode) throw { code:'functions/unavailable', message:'Koneksi jaringan terputus (simulasi offline).' };
-    if(sbOK && me){
-      var uid = me.id || me.uid;
-      if(!currentTabunganId) await loadWallet(uid);
-      var tipeSql = t === 'deposit' ? 'setor' : 'tarik';
-      var insRes = await supabase.from('transaksi').insert([{
-        tabungan_id: currentTabunganId,
-        member_id: uid,
-        tipe: tipeSql,
-        nominal: Number(raw),
-        catatan: nt || (TXN[t] + ' BankVerse')
-      }]).select().maybeSingle();
-
-      if(insRes.error) throw insRes.error;
-      await refreshWallet();
-      var insTx = insRes.data;
-      receipt = txs.filter(function(x){ return x.id === (insTx && insTx.id); })[0] || null;
-      txForm = null;
-      setNote(TXN[t] + ' berhasil tercatat di Supabase.', 'ok');
-      busy = false; render(); return;
-    }
-    var r = (await fn.httpsCallable('simTx')({ type:t, amount:Number(raw), requestId:txForm.requestId, toMemberId:to, note:nt })).data;
-    wal = r.balance; txForm = null;
-    setNote(r.ok ? TXN[t]+' berhasil (SIMULASI).' : 'Transaksi gagal: '+r.reason, r.ok ? 'ok' : 'err');
-    busy = false; await refreshWallet(); receipt = txs.filter(function(x){ return x.reference === r.reference; })[0] || null; render(); return;
-  }catch(e){
-    var c = e && e.code || '';
-    if(['functions/internal','functions/unavailable','functions/unknown','functions/deadline-exceeded'].indexOf(c) < 0) txForm.requestId = newReqId();
-    setNote((e && e.message) || txMsg(e),'err');
-  }
-  busy = false; render();
-}
-
-/* ---------- panel admin & audit (Tahap 6) ---------- */
+/* ==============================================================================
+   PANEL ADMIN: MANAJEMEN PESANAN, CELENGAN NFC & AUDIT TRANSAKSI
+   ============================================================================== */
 var apanel = $('#adminPanel'), abody = $('#adminBody'), atab = 'ringkasan', adata = {}, aBusy = false, aMsg = { t:'', k:'' };
-async function checkAdmin(u){
-  try{ var r = await u.getIdTokenResult(true); isAdm = r.claims.admin === true && r.claims.via !== 'nfc'; }catch(e){ isAdm = false; }
+
+function openAdmin(){
+  if(!isAdm) return;
+  modal.hidden = true;
+  apanel.hidden = false;
+  aTab('ringkasan');
 }
-async function acall(name,data){ return (await fn.httpsCallable(name)(data || {})).data; }
-function amsg(e){
-  var c = e && e.code || '';
-  if(c.indexOf('functions/') === 0 && ['functions/internal','functions/unknown','functions/unavailable'].indexOf(c) < 0) return e.message;
-  return 'Koneksi atau server bermasalah. Coba lagi.';
-}
-function dt(ms){ return ms ? new Date(ms).toLocaleString('id-ID') : '-'; }
+
 function tbl(head,rows){
   var t = E('table',{ class:'tbl' }), tr = E('tr');
   head.forEach(function(h){ tr.appendChild(E('th',{ text:h })); });
@@ -1564,6 +1640,7 @@ function tbl(head,rows){
   });
   t.appendChild(tb); return E('div',{ class:'tblw' },[t]);
 }
+
 function csv(name,head,rows){
   function q(v){ v = v == null ? '' : String(v); if(/^[=+\-@\t\r]/.test(v)) v = "'" + v; return '"' + v.replace(/"/g,'""') + '"'; }
   var s = [head].concat(rows).map(function(r){ return r.map(q).join(','); }).join('\r\n');
@@ -1571,80 +1648,221 @@ function csv(name,head,rows){
   a.download = name+'-'+new Date().toISOString().slice(0,10)+'.csv'; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(function(){ URL.revokeObjectURL(a.href); },3000);
 }
-function abtn(text,fnc,dis){ return E('button',{ type:'button', class:'tool', text:text, disabled: dis ? '' : null, on:{ click:fnc } }); }
-function openAdmin(){ if(!isAdm) return; modal.hidden = true; apanel.hidden = false; aTab('ringkasan'); }
+
 async function aTab(t){
-  atab = t; stopLive(); if(t === 'live'){ startLive(); return; } aBusy = true; aMsg = { t:'Memuat...', k:'' }; aRender();
-  var m = { ringkasan:'adminOverview', anggota:'adminListUsers', kartu:'adminListCards', transaksi:'adminListTx', audit:'adminListAudit' };
-  try{ adata[t] = await acall(m[t]); aMsg = { t:'', k:'' }; }catch(e){ aMsg = { t:amsg(e), k:'err' }; }
+  atab = t;
+  aBusy = true; aMsg = { t:'Memuat data dari Supabase...', k:'' }; aRender();
+  try{
+    if(t === 'ringkasan'){
+      var { count: uCount } = await supabase.from('profiles').select('*', { count:'exact', head:true });
+      var { data: pList } = await supabase.from('piggy_banks').select('saldo, status');
+      var totalSaldo = (pList||[]).reduce(function(acc, x){ return acc + Number(x.saldo||0); }, 0);
+      var { count: oPending } = await supabase.from('orders').select('*', { count:'exact', head:true }).in('status', ['dipesan', 'diproses']);
+      var { count: txCount } = await supabase.from('transactions').select('*', { count:'exact', head:true });
+      adata.ringkasan = {
+        totalMembers: uCount || 0,
+        totalCelengan: (pList||[]).length,
+        totalSaldo: totalSaldo,
+        pendingOrders: oPending || 0,
+        totalTransactions: txCount || 0
+      };
+    } else if(t === 'orders'){
+      var { data: oList } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+      var { data: profs } = await supabase.from('profiles').select('id, nama, email');
+      adata.orders = (oList||[]).map(function(o){
+        var pr = (profs||[]).find(function(p){ return p.id === o.member_id; });
+        return Object.assign({}, o, { memberName: pr ? pr.nama : 'Nasabah', memberEmail: pr ? pr.email : '-' });
+      });
+    } else if(t === 'celengan'){
+      var { data: pList2 } = await supabase.from('piggy_banks').select('*').order('created_at', { ascending: false });
+      var { data: profs2 } = await supabase.from('profiles').select('id, nama, email');
+      adata.celengan = (pList2||[]).map(function(p){
+        var pr = (profs2||[]).find(function(x){ return x.id === p.owner_id; });
+        return Object.assign({}, p, { ownerName: pr ? pr.nama : 'Nasabah' });
+      });
+    } else if(t === 'transaksi'){
+      var { data: tList } = await supabase.from('transactions').select('*').order('waktu', { ascending: false }).limit(50);
+      var { data: profs3 } = await supabase.from('profiles').select('id, nama');
+      var { data: pList3 } = await supabase.from('piggy_banks').select('id, nama, nfc_uid');
+      adata.transaksi = (tList||[]).map(function(tx){
+        var pr = (profs3||[]).find(function(x){ return x.id === tx.member_id; });
+        var pg = (pList3||[]).find(function(x){ return x.id === tx.piggy_bank_id; });
+        return Object.assign({}, tx, {
+          memberName: pr ? pr.nama : 'Nasabah',
+          celenganName: pg ? pg.nama : 'Celengan',
+          nfcUid: pg ? pg.nfc_uid : '-'
+        });
+      });
+    } else if(t === 'anggota'){
+      var { data: aList } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+      adata.anggota = aList || [];
+    }
+    aMsg = { t:'', k:'' };
+  }catch(e){
+    aMsg = { t:errText(e), k:'err' };
+  }
   aBusy = false; aRender();
 }
-async function aDo(name,data,okText,reload){
-  aBusy = true; aRender();
-  try{ await acall(name,data); aMsg = { t:okText, k:'ok' }; adata[atab] = await acall(reload); }catch(e){ aMsg = { t:amsg(e), k:'err' }; }
-  aBusy = false; aRender();
-}
+
 function aRender(){
   abody.textContent = '';
-  abody.appendChild(E('h2',{ text:'Panel Admin BANKVERSE (SIMULASI)' }));
-  var names = { ringkasan:'Ringkasan', anggota:'Anggota', kartu:'Kartu NFC', transaksi:'Transaksi', audit:'Audit log', live:'Langsung' };
-  var bar = E('div',{ class:'mrow' }, Object.keys(names).map(function(k){
-    return E('button',{ type:'button', class:'tool', 'aria-pressed':String(atab === k), text:names[k], on:{ click:function(){ adata.act = null; aTab(k); } } });
+  var head = E('div',{ class:'dash-header' },[
+    E('div',{},[
+      E('h2',{ text:'👑 Panel Administrator Celengan NFC' }),
+      E('p',{ class:'msg', text:'Manajemen pesanan, pendaftaran UID NTAG, dan audit realtime.' })
+    ]),
+    E('button',{ type:'button', class:'tool', text:'Tutup Panel', on:{ click:function(){ apanel.hidden = true; } } })
+  ]);
+  abody.appendChild(head);
+
+  var tabs = { ringkasan:'📊 Ringkasan', orders:'📦 Kelola Pesanan', celengan:'🐷 Celengan NFC', transaksi:'📜 Audit Transaksi', anggota:'👥 Nasabah & Role' };
+  var bar = E('div',{ class:'dash-nav-tabs', style:'margin:10px 0' }, Object.keys(tabs).map(function(k){
+    return E('button',{ type:'button', class:'dash-nav-btn ' + (atab === k ? 'active' : ''), text:tabs[k], on:{ click:function(){ aTab(k); } } });
   }));
-  bar.appendChild(abtn('Tutup panel',function(){ apanel.hidden = true; }));
   abody.appendChild(bar);
   abody.appendChild(E('p',{ class:'msg '+aMsg.k, role:'status', text:aMsg.t }));
-  var d = adata[atab]; if(!d) return;
+
+  var d = adata[atab];
+  if(!d) return;
+
   if(atab === 'ringkasan'){
-    var dl = E('dl',{ class:'kv' });
-    [['Anggota total',d.users.total],['Aktif',d.users.aktif],['Ditangguhkan',d.users.ditangguhkan],['Ditutup',d.users.ditutup],['Kartu aktif',d.cardsAktif],['Kartu terkunci',d.cardsDikunci],['Transaksi simulasi',d.txTotal]].forEach(function(r){
-      dl.appendChild(E('dt',{ text:r[0] })); dl.appendChild(E('dd',{ text:String(r[1]) }));
+    var grid = E('div',{ class:'admin-stat-grid' });
+    var stats = [
+      { icon:'👥', num: d.totalMembers, lbl:'Total Nasabah Terdaftar' },
+      { icon:'🐷', num: d.totalCelengan, lbl:'Total Celengan NFC Aktif' },
+      { icon:'💰', num: fmtSim(d.totalSaldo), lbl:'Total Saldo di Celengan' },
+      { icon:'📦', num: d.pendingOrders, lbl:'Pesanan Menunggu Pengiriman' },
+      { icon:'📜', num: d.totalTransactions, lbl:'Total Transaksi Audit' }
+    ];
+    stats.forEach(function(s){
+      var card = E('div',{ class:'admin-stat-card' });
+      card.appendChild(E('div',{ class:'admin-stat-icon', text:s.icon }));
+      card.appendChild(E('div',{ class:'admin-stat-val', text:String(s.num) }));
+      card.appendChild(E('div',{ class:'admin-stat-lbl', text:s.lbl }));
+      grid.appendChild(card);
     });
-    abody.appendChild(dl);
-    abody.appendChild(E('p',{ class:'msg', text:'Semua angka berasal dari data simulasi. Aksi sensitif dicatat di audit log.' }));
-  } else if(atab === 'anggota'){
-    var rows = d.users.map(function(u){
-      var acts = E('div',{ class:'mrow' });
-      acts.appendChild(abtn('Aktivitas',function(){ aAct(u); },aBusy));
-      if(u.uid !== me.uid) ['aktif','ditangguhkan','ditutup'].filter(function(s){ return s !== u.status; }).forEach(function(s){
-        acts.appendChild(abtn(s === 'aktif' ? 'Aktifkan' : s === 'ditutup' ? 'Tutup akun' : 'Tangguhkan',function(){
-          if(confirm('Ubah status '+u.memberId+' ('+u.displayName+') menjadi '+s+'?')) aDo('adminSetStatus',{ uid:u.uid, status:s },'Status diperbarui.','adminListUsers');
-        },aBusy));
-      });
-      return [u.memberId,u.displayName,u.email,u.status,u.balance == null ? '-' : fmtSim(u.balance),dt(u.createdMs),acts];
+    abody.appendChild(grid);
+  } else if(atab === 'orders'){
+    var rows = d.map(function(o){
+      var actWrap = E('div',{ class:'mrow' });
+      if(o.status === 'dipesan'){
+        actWrap.appendChild(E('button',{ type:'button', class:'tool', style:'min-height:30px;padding:2px 8px;font-size:11px', text:'Proses', on:{ click:function(){ adminProcessOrder(o.id, 'diproses'); } } }));
+        actWrap.appendChild(E('button',{ type:'button', class:'tool btn-reject', style:'min-height:30px;padding:2px 8px;font-size:11px', text:'Tolak', on:{ click:function(){ adminRejectOrder(o.id); } } }));
+      } else if(o.status === 'diproses'){
+        actWrap.appendChild(E('button',{ type:'button', class:'tool btn-approve', style:'min-height:30px;padding:2px 8px;font-size:11px', text:'🏷️ Daftarkan UID & Kirim', on:{ click:function(){ adminShipOrder(o.id); } } }));
+      } else if(o.status === 'dikirim'){
+        actWrap.appendChild(E('span',{ style:'font-size:11px;color:var(--brand-blue)', text:'Terkirim: ' + (o.nfc_uid||'-') }));
+      }
+      return [
+        new Date(o.created_at).toLocaleDateString('id-ID'),
+        o.memberName,
+        o.nama_celengan,
+        o.target_nominal ? fmtSim(o.target_nominal) : '-',
+        o.nfc_uid || '-',
+        o.status.toUpperCase(),
+        actWrap
+      ];
     });
-    abody.appendChild(abtn('Ekspor CSV',function(){ csv('anggota',['memberId','nama','email','status','saldo_simulasi','bergabung'],d.users.map(function(u){ return [u.memberId,u.displayName,u.email,u.status,u.balance,dt(u.createdMs)]; })); }));
-    abody.appendChild(tbl(['ID anggota','Nama','Email','Status','Saldo (SIM)','Bergabung','Aksi'],rows));
-    if(adata.act){
-      abody.appendChild(E('p',{ class:'msg', text:'Aktivitas dan riwayat masuk: '+adata.act.name }));
-      abody.appendChild(tbl(['Waktu','Aktivitas'],adata.act.items.map(function(i){ return [dt(i.atMs),i.action]; })));
-    }
-  } else if(atab === 'kartu'){
-    abody.appendChild(abtn('Ekspor CSV',function(){ csv('kartu-nfc',['cardId','memberId','label','status','dibuat','terakhir_dipakai'],d.cards.map(function(c){ return [c.id,c.memberId,c.label,c.status,dt(c.issuedMs),dt(c.lastUsedMs)]; })); }));
-    abody.appendChild(tbl(['Anggota','Label','Status','Dibuat','Terakhir dipakai','Aksi'],d.cards.map(function(c){
-      var acts = E('div',{ class:'mrow' });
-      if(c.status !== 'dicabut') acts.appendChild(abtn('Cabut',function(){ if(confirm('Cabut kartu '+c.label+' milik '+c.memberId+'?')) aDo('adminCardAction',{ cardId:c.id, action:'cabut' },'Kartu dicabut.','adminListCards'); },aBusy));
-      if(c.status === 'dikunci') acts.appendChild(abtn('Buka kunci',function(){ aDo('adminCardAction',{ cardId:c.id, action:'buka' },'Kartu dibuka.','adminListCards'); },aBusy));
-      return [c.memberId,c.label,c.status,dt(c.issuedMs),dt(c.lastUsedMs),acts];
-    })));
+    abody.appendChild(tbl(['Tanggal','Pemesan','Nama Celengan','Target','NFC UID','Status','Aksi'], rows));
+  } else if(atab === 'celengan'){
+    var pRows = d.map(function(p){
+      return [
+        p.ownerName,
+        p.nama,
+        p.nfc_uid,
+        fmtSim(p.saldo),
+        p.status.toUpperCase(),
+        new Date(p.created_at).toLocaleDateString('id-ID')
+      ];
+    });
+    abody.appendChild(tbl(['Pemilik','Nama Celengan','UID NFC NTAG','Saldo Saat Ini','Status','Didaftarkan'], pRows));
   } else if(atab === 'transaksi'){
-    abody.appendChild(abtn('Ekspor CSV',function(){ csv('transaksi-simulasi',['referensi','jenis','nominal_sim','status','alasan','dari','ke','waktu'],d.txs.map(function(x){ return [x.reference,x.type,x.amount,x.status,x.reason,x.fromMemberId,x.toMemberId,dt(x.createdMs)]; })); }));
-    abody.appendChild(tbl(['Waktu','Referensi','Jenis','Nominal (SIM)','Status','Dari','Ke'],d.txs.map(function(x){
-      return [dt(x.createdMs),x.reference,TXN[x.type] || x.type,fmtSim(x.amount),x.status+(x.reason ? ' ('+x.reason+')' : ''),x.fromMemberId || '-',x.toMemberId || '-'];
-    })));
-  } else if(atab === 'live'){
-    abody.appendChild(E('p',{ class:'msg', text:'Aktivitas layanan anggota secara langsung (30 terbaru).' }));
-    abody.appendChild(tbl(['Waktu','Anggota','Layanan','Status','Keterangan'],d));
-  } else if(atab === 'audit'){
-    abody.appendChild(abtn('Ekspor CSV',function(){ csv('audit-log',['waktu','pelaku_uid','aksi','target'],d.logs.map(function(l){ return [dt(l.atMs),l.actorUid,l.action,l.target]; })); }));
-    abody.appendChild(tbl(['Waktu','Pelaku (uid)','Aksi','Target'],d.logs.map(function(l){ return [dt(l.atMs),l.actorUid,l.action,l.target]; })));
+    abody.appendChild(E('button',{ type:'button', class:'tool', style:'margin-bottom:8px', text:'Unduh CSV Transaksi', on:{ click:function(){
+      csv('transaksi-celengan-nfc', ['waktu','nasabah','celengan','nfc_uid','tipe','jumlah','saldo_sebelum','saldo_sesudah','catatan'], d.map(function(x){
+        return [new Date(x.waktu).toISOString(), x.memberName, x.celenganName, x.nfcUid, x.tipe, x.jumlah, x.saldo_sebelum, x.saldo_sesudah, x.catatan];
+      }));
+    } } }));
+    var tRows = d.map(function(tx){
+      return [
+        new Date(tx.waktu).toLocaleString('id-ID'),
+        tx.memberName,
+        tx.celenganName,
+        tx.tipe === 'setor' ? '🟢 Setor' : '🔵 Tarik',
+        fmtSim(tx.jumlah),
+        fmtSim(tx.saldo_sebelum),
+        fmtSim(tx.saldo_sesudah),
+        tx.catatan || '-'
+      ];
+    });
+    abody.appendChild(tbl(['Waktu','Nasabah','Celengan','Tipe','Jumlah','Saldo Sebelum','Saldo Sesudah','Catatan'], tRows));
+  } else if(atab === 'anggota'){
+    var aRows = d.map(function(u){
+      var btnRole = E('button',{ type:'button', class:'tool', style:'min-height:30px;padding:2px 8px;font-size:11px', text: u.role === 'admin' ? 'Ubah ke Member' : 'Jadikan Admin', on:{ click:function(){ adminChangeRole(u.id, u.role === 'admin' ? 'member' : 'admin'); } } });
+      return [
+        u.id.slice(0,8) + '...',
+        u.nama,
+        u.role.toUpperCase(),
+        new Date(u.created_at).toLocaleDateString('id-ID'),
+        btnRole
+      ];
+    });
+    abody.appendChild(tbl(['ID','Nama','Role','Terdaftar','Aksi'], aRows));
   }
 }
-async function aAct(u){
-  aBusy = true; aRender();
-  try{ var r = await acall('adminUserActivity',{ uid:u.uid }); adata.act = { name:u.memberId+' ('+u.displayName+')', items:r.items }; aMsg = { t:'', k:'' }; }
-  catch(e){ aMsg = { t:amsg(e), k:'err' }; }
-  aBusy = false; aRender();
+
+/* Aksi Admin: Proses Status */
+async function adminProcessOrder(orderId, status){
+  try{
+    var { error } = await supabase.rpc('process_order', { p_order_id: orderId, p_status: status });
+    if(error) throw error;
+    toast('Pesanan diubah ke status ' + status, 'ok');
+    aTab('orders');
+  }catch(e){ alert(errText(e)); }
+}
+
+/* Aksi Admin: Daftarkan UID NFC NTAG & Tandai Dikirim */
+async function adminShipOrder(orderId){
+  var nfcUid = prompt('🏷️ DAFTARKAN UID NFC NTAG UNTUK CELENGAN\n\nMasukkan UID hardware NFC NTAG yang ditempelkan ke celengan fisik (contoh: 04:A2:3B:5C:88 atau NTAG-001):');
+  if(!nfcUid || nfcUid.trim().length < 4){
+    alert('UID NFC minimal 4 karakter!');
+    return;
+  }
+  try{
+    var { error } = await supabase.rpc('process_order', {
+      p_order_id: orderId,
+      p_status: 'dikirim',
+      p_nfc_uid: nfcUid.trim()
+    });
+    if(error) throw error;
+    toast('Celengan fisik dengan UID ' + nfcUid + ' berhasil ditandai DIKIRIM!', 'ok');
+    aTab('orders');
+  }catch(e){ alert(errText(e)); }
+}
+
+/* Aksi Admin: Tolak Pesanan */
+async function adminRejectOrder(orderId){
+  var alasan = prompt('Masukkan alasan penolakan pesanan:');
+  if(!alasan) return;
+  try{
+    var { error } = await supabase.rpc('process_order', {
+      p_order_id: orderId,
+      p_status: 'ditolak',
+      p_alasan_tolak: alasan.trim()
+    });
+    if(error) throw error;
+    toast('Pesanan ditolak.', 'warn');
+    aTab('orders');
+  }catch(e){ alert(errText(e)); }
+}
+
+/* Aksi Admin: Ganti Role Pengguna */
+async function adminChangeRole(userId, newRole){
+  try{
+    var { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+    if(error) throw error;
+    toast('Role pengguna berhasil diubah ke ' + newRole.toUpperCase(), 'ok');
+    aTab('anggota');
+  }catch(e){ alert(errText(e)); }
 }
 
 /* ==========================================================================
