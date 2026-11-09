@@ -654,10 +654,19 @@ window.BANKVERSE_FIREBASE_CONFIG = {
   }
   function wrapNear(a, b) { var d = ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; return a + d; }
   var FIELDS = ['tx', 'ty', 'tz', 'dist', 'az', 'el'];
+  var cameraFollowTarget = null;
   function stepCamera(dt) {
     if (!view.ready) { view.dist = fitDist(); view.ready = true; }
-    var k = reduce ? 1 : 1 - Math.pow(0.0008, dt);
-    if (view.goal) {
+    if (cameraFollowTarget && cameraFollowTarget.root) {
+      view.goal = null;
+      var pos = cameraFollowTarget.root.position;
+      var kF = Math.min(1, dt * 5);
+      view.tx += (pos.x - view.tx) * kF;
+      view.tz += (pos.z + 5.5 - view.tz) * kF;
+      view.ty += (1.4 - view.ty) * kF;
+      view.dist += (18 - view.dist) * kF;
+    } else if (view.goal) {
+      var k = reduce ? 1 : 1 - Math.pow(0.0008, dt);
       var g = view.goal, big = 0;
       FIELDS.forEach(function (f) { if (g[f] === undefined) return; var diff = g[f] - view[f]; view[f] += diff * k; big = Math.max(big, Math.abs(diff) * (1 - k)); });
       if (big < 0.01) { FIELDS.forEach(function (f) { if (g[f] !== undefined) view[f] = g[f]; }); view.goal = null; }
@@ -669,11 +678,34 @@ window.BANKVERSE_FIREBASE_CONFIG = {
   }
   function fitAll() { view.goal = { tx: HOME.tx, ty: HOME.ty, tz: HOME.tz, el: HOME.el, az: wrapNear(view.az, HOME.az), dist: fitDist() }; }
 
-  var ptrs = new Map(), drag = null, pinch = null;
+  var ptrs = new Map(), drag = null, pinch = null, canvasHoldTimer = null, downPos = null;
+  function isHittingAva(cx, cy) {
+    if (!mAv || !mAv.root) return false;
+    var rect = canvas.getBoundingClientRect();
+    ndc.set(((cx - rect.left) / W) * 2 - 1, -((cy - rect.top) / H) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    var hits = ray.intersectObjects([mAv.root], true);
+    return Boolean(hits && hits.length > 0);
+  }
   function mid() { var a = Array.from(ptrs.values()); return { x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2, d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) }; }
-  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  canvas.addEventListener('contextmenu', function (e) {
+    if (isHittingAva(e.clientX, e.clientY)) {
+      e.preventDefault();
+      openAvaActionMenu();
+      return;
+    }
+    e.preventDefault();
+  });
   canvas.addEventListener('pointerdown', function (e) {
     view.goal = null; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    downPos = { x: e.clientX, y: e.clientY };
+    if (isHittingAva(e.clientX, e.clientY)) {
+      clearTimeout(canvasHoldTimer);
+      canvasHoldTimer = setTimeout(function () {
+        haptic([40, 80]);
+        openAvaActionMenu();
+      }, 450);
+    }
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { }
     if (ptrs.size === 1) {
       var isPan = (e.button === 2 || e.shiftKey);
@@ -682,6 +714,9 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     } else if (ptrs.size === 2) { var m = mid(); pinch = { d: m.d, x: m.x, y: m.y }; drag = null; }
   });
   canvas.addEventListener('pointermove', function (e) {
+    if (downPos && Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) > 8) {
+      clearTimeout(canvasHoldTimer);
+    }
     if (!ptrs.has(e.pointerId)) return;
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch && ptrs.size >= 2) {
@@ -695,6 +730,7 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     else { view.az -= dx * 0.007; view.el = clamp(view.el + dy * 0.005, 0.05, 1.52); }
   });
   function endPtr(e) {
+    clearTimeout(canvasHoldTimer);
     if (!ptrs.has(e.pointerId)) return;
     ptrs.delete(e.pointerId);
     if (ptrs.size < 2) pinch = null;
@@ -861,6 +897,37 @@ window.BANKVERSE_FIREBASE_CONFIG = {
       } else if (c.st === 'cs') {
         stand(c, dt, -Math.PI / 2, now);
         if (now > c.until) { s.busy = null; s.nextSay = now + rr(3000, 6000); c.teller = null; c.st = 'toidle'; c.path = CSBACK.map(function (q) { return q.slice(); }); c.pi = 0; }
+      } else if (c.st === 'toTellerTabungan') {
+        if (follow(c, dt, now)) {
+          c.st = 'atTellerTabungan';
+          cameraFollowTarget = null;
+          var teller1 = TELLERS[0];
+          stand(c, dt, Math.PI, now);
+          staffSay(teller1, 'Halo ' + c.name + '! Silakan isi formulir pembuatan tabungan celengan Anda.', 5000, now);
+          toast('Teller 1: Silakan isi formulir pembuatan tabungan', 'ok');
+          setTimeout(function () {
+            showSavingsCreationModal();
+          }, 800);
+        }
+      } else if (c.st === 'atTellerTabungan') {
+        stand(c, dt, Math.PI, now);
+      } else if (c.st === 'backToSofa') {
+        if (follow(c, dt, now)) {
+          c.st = 'sitting';
+          cameraFollowTarget = null;
+          c.root.position.set(0.8, 0.42, 12.8);
+          c.root.rotation.y = -Math.PI / 2;
+          c.legs[0].rotation.x = c.legs[1].rotation.x = -Math.PI / 2;
+          c.arms[0].rotation.x = c.arms[1].rotation.x = -0.3;
+          staffSay(c, 'Tabunganku sedang diproses admin... Menunggu di sofa.', 4500, now);
+          toast('Ava kembali duduk di ruang tunggu lobi.', 'ok');
+        }
+      } else if (c.st === 'sitting') {
+        c.root.position.y = 0.42;
+        c.legs[0].rotation.x = c.legs[1].rotation.x = -Math.PI / 2;
+        c.arms[0].rotation.x = -0.3 + Math.sin(now / 1000 * 2) * 0.05;
+        c.arms[1].rotation.x = -0.3 - Math.sin(now / 1000 * 2) * 0.05;
+        c.head.rotation.y = Math.sin(now / 1000 * 0.8) * 0.15;
       } else if (c.st === 'leave') {
         if (follow(c, dt, now)) { addLog(c.name + ' keluar dari bank'); dropCust(c); return; }
       }
@@ -914,18 +981,269 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     var n = c.teller ? TELLERS.indexOf(c.teller) + 1 : 0;
     return ({
       toidle: 'Di lobi', idle: c.job ? 'Menunggu' : 'Di lobi', enter: 'Antre ' + fmt(c.no), queue: 'Antre ' + fmt(c.no), call: 'Menuju Teller ' + n, serve: 'Di Teller ' + n,
-      toCs: 'Menuju Customer Service', cs: 'Di Customer Service', leave: 'Keluar'
-    })[c.st] || 'Anggota';
+      toCs: 'Menuju Customer Service', cs: 'Di Customer Service', leave: 'Keluar',
+      toTellerTabungan: 'Menuju Teller 1 (Tabungan)', atTellerTabungan: 'Di Teller 1', backToSofa: 'Kembali ke Sofa', sitting: 'Duduk Santai di Sofa'
+    })[c.st] || 'Ava Member';
   }
   function spawnMember() {
     var L = LOOKS[mHash(prof.memberId) % LOOKS.length], w = makeStaff(L), nm = String(prof.displayName).slice(0, 16);
     w.root.position.set(0, 0.64, 14.4); w.root.rotation.y = Math.PI; scene.add(w.root);
     var el = document.createElement('div'); el.className = 'stag'; el.style.setProperty('--sc', GOLD);
     var pl = document.createElement('div'); pl.className = 'plate';
-    var b = document.createElement('b'); b.textContent = nm; var sm = document.createElement('small'); sm.textContent = 'Anggota';
+    var b = document.createElement('b'); b.textContent = nm; var sm = document.createElement('small'); sm.textContent = '✨ Ava (Tekan & Tahan)';
     pl.appendChild(b); pl.appendChild(sm); el.appendChild(pl); labelsEl.appendChild(el);
+
+    // Event listener Menekan dan Menahan Ava (Press and Hold 450ms)
+    var avaHoldTimer = null;
+    function startHold(e) {
+      if (e) e.stopPropagation();
+      avaHoldTimer = setTimeout(function () {
+        haptic([40, 80]);
+        openAvaActionMenu();
+      }, 450);
+    }
+    function cancelHold() { clearTimeout(avaHoldTimer); }
+    el.addEventListener('pointerdown', startHold);
+    el.addEventListener('pointerup', cancelHold);
+    el.addEventListener('pointerleave', cancelHold);
+    el.addEventListener('pointercancel', cancelHold);
+    el.addEventListener('contextmenu', function (e) { e.preventDefault(); openAvaActionMenu(); });
+
     mAv = { no: 0, name: nm, root: w.root, legs: w.legs, arms: w.arms, head: w.head, st: 'toidle', el: el, sm: sm, path: [[0, 13.4], MIDLE.slice()], pi: 0, until: 0, teller: null, member: true, job: null };
-    custs.push(mAv); addLog(nm + ' (anggota) masuk ke lobi');
+    custs.push(mAv); addLog(nm + ' (Ava Member) masuk ke lobi');
+  }
+
+  /* Validasi Kelengkapan Profil Member Baru */
+  function isProfileComplete(p) {
+    if (!p) return false;
+    var hasPhone = p.no_hp && String(p.no_hp).trim().length >= 8;
+    var hasAddr = p.alamat_lengkap && String(p.alamat_lengkap).trim().length >= 5;
+    return Boolean(hasPhone && hasAddr);
+  }
+
+  /* Menu Aksi Interaktif Ava (Muncul saat menekan dan menahan Ava) */
+  function openAvaActionMenu() {
+    if (!me || !prof) {
+      modal.hidden = false;
+      render();
+      toast('Silakan masuk ke akun terlebih dahulu.', 'warn');
+      return;
+    }
+
+    var existing = document.querySelector('.ava-action-menu-backdrop');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+
+    var backdrop = E('div', { class: 'ava-action-menu-backdrop' });
+    var card = E('div', { class: 'ava-action-menu-card' });
+
+    var header = E('div', { class: 'ava-action-menu-header' }, [
+      E('div', { class: 'ava-avatar-circle', text: '✨' }),
+      E('div', {}, [
+        E('h3', { style: 'margin:0;font-size:15px', text: 'Ava (' + prof.displayName + ')' }),
+        E('p', { style: 'margin:2px 0 0;font-size:11.5px;color:var(--ink-secondary)', text: isProfileComplete(prof) ? 'Status: Member Terverifikasi' : 'Status: Member Baru (Profil Belum Lengkap)' })
+      ])
+    ]);
+    card.appendChild(header);
+
+    card.appendChild(E('p', { class: 'msg', style: 'margin:8px 0 4px', text: 'Pilih aksi perbankan yang ingin Anda jalankan:' }));
+
+    var grid = E('div', { class: 'ava-action-grid' });
+
+    var actions = [
+      { id: 'buat_tabungan', icon: '🐷', label: 'Buat Tabungan' },
+      { id: 'setor', icon: '🟢', label: 'Setor Saldo' },
+      { id: 'tarik', icon: '🔵', label: 'Tarik Tunai' },
+      { id: 'status', icon: '📊', label: 'Status Tabungan' }
+    ];
+
+    actions.forEach(function (act) {
+      var btn = E('button', {
+        type: 'button',
+        class: 'ava-action-btn',
+        on: {
+          click: function () {
+            if (document.body.contains(backdrop)) document.body.removeChild(backdrop);
+            handleAvaAction(act.id);
+          }
+        }
+      }, [
+        E('span', { class: 'ava-action-icon', text: act.icon }),
+        E('span', { text: act.label })
+      ]);
+      grid.appendChild(btn);
+    });
+
+    card.appendChild(grid);
+
+    var btnClose = E('button', {
+      type: 'button',
+      class: 'tool',
+      style: 'margin-top:10px',
+      text: 'Tutup Menu',
+      on: {
+        click: function () {
+          if (document.body.contains(backdrop)) document.body.removeChild(backdrop);
+        }
+      }
+    });
+    card.appendChild(btnClose);
+
+    backdrop.appendChild(card);
+    backdrop.addEventListener('click', function (e) {
+      if (e.target === backdrop && document.body.contains(backdrop)) document.body.removeChild(backdrop);
+    });
+
+    document.body.appendChild(backdrop);
+  }
+
+  /* Handler Utama Aksi Ava */
+  function handleAvaAction(actionType) {
+    if (!me || !prof) return;
+
+    if (actionType === 'buat_tabungan') {
+      // 1. Cek kelengkapan profil member
+      if (!isProfileComplete(prof)) {
+        // BATALKAN AKSI SIMULASI INTERAKTIF!
+        toast('Sebagai member baru, Anda harus melengkapi profil Anda terlebih dahulu!', 'warn');
+        if (mAv) staffSay(mAv, 'Profilku belum lengkap. Aku harus lengkapi profil dulu!', 4500, performance.now());
+        haptic([60, 100]);
+        memberTab = 'profil';
+        render();
+        modal.hidden = false;
+        return;
+      }
+
+      // 2. Jika profil sudah lengkap: Ava berjalan ke Teller 1 & kamera membuntuti
+      if (!mAv) spawnMember();
+      if (!mAv) return;
+
+      // Jika Ava sedang duduk, tegakkan kembali
+      if (mAv.st === 'sitting') {
+        mAv.root.position.y = 0.68;
+        mAv.legs[0].rotation.x = 0;
+        mAv.legs[1].rotation.x = 0;
+      }
+
+      toast('Ava berjalan menuju Teller 1 untuk mengajukan tabungan...', 'ok');
+      cameraFollowTarget = mAv;
+      mAv.st = 'toTellerTabungan';
+      mAv.path = [[mAv.root.position.x, 8], [-5.25, 4], [-5.25, -1.75]];
+      mAv.pi = 0;
+
+    } else if (actionType === 'setor') {
+      memberTab = 'celengan';
+      txForm = { tipe: 'setor' };
+      render();
+      modal.hidden = false;
+    } else if (actionType === 'tarik') {
+      memberTab = 'celengan';
+      txForm = { tipe: 'tarik' };
+      render();
+      modal.hidden = false;
+    } else if (actionType === 'status') {
+      memberTab = 'celengan';
+      txForm = null;
+      render();
+      modal.hidden = false;
+    }
+  }
+
+  /* Modal Formulir Pembuatan Tabungan (Dipicu saat Ava tiba di Teller 1) */
+  function showSavingsCreationModal() {
+    var backdrop = E('div', { class: 'nfc-step-modal-backdrop' });
+    var box = E('div', { class: 'nfc-step-modal' });
+
+    box.appendChild(E('h2', { text: '📝 Formulir Pembuatan Tabungan Celengan' }));
+    box.appendChild(E('p', { class: 'msg', text: 'Teller 1 sedang melayani pengajuan celengan fisik ber-chip NTAG NFC untuk akun Anda.' }));
+
+    var f = E('form', { novalidate: '' });
+    f.style.display = 'grid'; f.style.gap = '10px';
+
+    f.appendChild(field('Nama Pemilik Tabungan', 'text', 'f_owner', 'name', (prof && prof.displayName) || 'Nasabah'));
+    var ownerInput = f.querySelector('#f_owner');
+    if (ownerInput) ownerInput.disabled = true;
+
+    f.appendChild(field('Nama Celengan (contoh: Tabungan Liburan, Celengan Qurban)', 'text', 'f_celengan_name', 'off', 'Tabungan ' + ((prof && prof.displayName) || 'Nasabah')));
+    f.appendChild(field('Goal / Target Tabungan (Nominal Rp)', 'number', 'f_target', 'off', '500000'));
+    f.appendChild(field('Catatan / Rencana Penggunaan', 'text', 'f_catatan', 'off', 'Tabungan celengan fisik NTAG NFC'));
+
+    var btnSubmit = E('button', {
+      type: 'submit',
+      class: 'tool btn-highlight',
+      style: 'background:var(--brand-blue);color:#fff;font-weight:700',
+      text: 'Kirim Formulir Pembuatan Tabungan'
+    });
+    var btnCancel = E('button', {
+      type: 'button',
+      class: 'tool',
+      text: 'Batal',
+      on: {
+        click: function () {
+          if (document.body.contains(backdrop)) document.body.removeChild(backdrop);
+          returnAvaToSofa();
+        }
+      }
+    });
+
+    f.appendChild(E('div', { class: 'mrow', style: 'margin-top:8px' }, [btnSubmit, btnCancel]));
+    f.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var cName = val('f_celengan_name').trim();
+      var target = val('f_target') ? Number(val('f_target')) : null;
+      var catatan = val('f_catatan').trim();
+      if (!cName || cName.length < 3) {
+        alert('Nama celengan minimal 3 karakter.');
+        return;
+      }
+      btnSubmit.disabled = true;
+      btnSubmit.textContent = 'Memproses formulir...';
+
+      try {
+        var payload = {
+          member_id: me.id || me.uid,
+          nama_celengan: cName,
+          target_nominal: target,
+          catatan: catatan,
+          status: 'dipesan'
+        };
+        var res = await supabase.from('orders').insert([payload]).select().single();
+        if (res.error && /table.*order.*schema cache/i.test(res.error.message)) {
+          res = await supabase.from('order').insert([payload]).select().single();
+        }
+        if (res.error) throw res.error;
+
+        await loadMemberData(me.id || me.uid);
+        if (document.body.contains(backdrop)) document.body.removeChild(backdrop);
+
+        // Teller Rani mengucapkan kalimat interaktif
+        var teller1 = TELLERS[0];
+        staffSay(teller1, 'Terima kasih Kak! Pembuatan tabungan Anda sedang diproses admin. Silakan kembali ke ruang tunggu.', 5000, performance.now());
+        toast('Pembuatan tabungan diajukan! Ava kembali ke ruang tunggu lobi.', 'ok');
+        haptic([40, 80, 120]);
+
+        // Ava kembali berjalan ke sofa lobi dan benar-benar duduk
+        setTimeout(function () {
+          returnAvaToSofa();
+        }, 1500);
+      } catch (err) {
+        alert('Gagal mengirim formulir: ' + errText(err));
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = 'Kirim Formulir Pembuatan Tabungan';
+      }
+    });
+
+    box.appendChild(f);
+    backdrop.appendChild(box);
+    document.body.appendChild(backdrop);
+  }
+
+  /* Ava Kembali Berjalan ke Ruang Tunggu dan Duduk di Sofa */
+  function returnAvaToSofa() {
+    if (!mAv) return;
+    cameraFollowTarget = mAv;
+    mAv.st = 'backToSofa';
+    mAv.path = [[-5.25, 2], [0, 8], [1.6, 12.8], [0.8, 12.8]];
+    mAv.pi = 0;
   }
   function leaveMember() {
     var c = mAv; if (!c) return;
@@ -1054,7 +1372,35 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     });
     (k || []).forEach(function (c) { e.appendChild(c); }); return e;
   }
-  function field(label, type, id, ac) { return E('label', { text: label }, [E('input', { type: type, id: id, autocomplete: ac, maxlength: '80' })]); }
+  var lastLoginEmail = '';
+  function field(label, type, id, ac, defaultVal) {
+    var inp = E('input', { type: type, id: id, autocomplete: ac, maxlength: '80' });
+    if (defaultVal != null) inp.value = defaultVal;
+    return E('label', { text: label }, [inp]);
+  }
+  function passwordField(label, id, ac) {
+    var inp = E('input', { type: 'password', id: id, autocomplete: ac, maxlength: '80' });
+    var btnToggle = E('button', {
+      type: 'button',
+      class: 'btn-toggle-pw',
+      text: '👁️',
+      title: 'Tampilkan/Sembunyikan Kata Sandi',
+      on: {
+        click: function (e) {
+          e.preventDefault();
+          if (inp.type === 'password') {
+            inp.type = 'text';
+            btnToggle.textContent = '🙈';
+          } else {
+            inp.type = 'password';
+            btnToggle.textContent = '👁️';
+          }
+        }
+      }
+    });
+    var wrap = E('div', { class: 'password-input-wrap' }, [inp, btnToggle]);
+    return E('label', { text: label }, [wrap]);
+  }
   function val(id) { var e = document.getElementById(id); return e ? e.value : ''; }
   function errText(e) {
     var msg = (e && e.message) || '';
@@ -1149,8 +1495,8 @@ window.BANKVERSE_FIREBASE_CONFIG = {
         ])
       ]));
     }
-    f.appendChild(field('Alamat Email', 'email', 'f_email', 'email'));
-    f.appendChild(field('Kata Sandi (min. 8 karakter)', 'password', 'f_pw', mode === 'register' ? 'new-password' : 'current-password'));
+    f.appendChild(field('Alamat Email', 'email', 'f_email', 'email', lastLoginEmail));
+    f.appendChild(passwordField('Kata Sandi (min. 8 karakter)', 'f_pw', mode === 'register' ? 'new-password' : 'current-password'));
     var submitBtn = E('button', { type: 'submit', class: 'tool', text: mode === 'register' ? 'Daftar Sekarang' : 'Masuk ke Akun' });
     if (!backendOK || busy) submitBtn.disabled = true;
     f.appendChild(submitBtn);
@@ -1755,6 +2101,7 @@ window.BANKVERSE_FIREBASE_CONFIG = {
   async function submitForm() {
     if (!backendOK || busy) return;
     var email = val('f_email').trim(), pw = val('f_pw'), name = val('f_name').trim(), role = val('f_role') || 'member';
+    lastLoginEmail = email; // Simpan email agar tidak terhapus jika login gagal
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setNote('Format email tidak valid.', 'err'); return render(); }
     if (pw.length < 8) { setNote('Kata sandi minimal 8 karakter.', 'err'); return render(); }
 
@@ -1782,12 +2129,14 @@ window.BANKVERSE_FIREBASE_CONFIG = {
 
         if (sUp && sUp.user) {
           if (sUp.session) {
+            lastLoginEmail = '';
             await loadMe(sUp.user);
             setNote('Akun berhasil terdaftar dan masuk!', 'ok');
           } else {
             // Coba auto sign-in jika confirmation di-bypass
             var { data: sInAuto, error: inAutoErr } = await supabase.auth.signInWithPassword({ email: email, password: pw });
             if (sInAuto && sInAuto.user) {
+              lastLoginEmail = '';
               await loadMe(sInAuto.user);
               setNote('Akun berhasil terdaftar dan masuk!', 'ok');
             } else {
@@ -1799,12 +2148,14 @@ window.BANKVERSE_FIREBASE_CONFIG = {
         var { data: sIn, error: inErr } = await supabase.auth.signInWithPassword({ email: email, password: pw });
         if (inErr) throw inErr;
         if (sIn && sIn.user) {
+          lastLoginEmail = '';
           await loadMe(sIn.user);
           setNote('');
         }
       }
     } catch (e) {
       setNote(errText(e), 'err');
+      // Email tetap tersimpan di lastLoginEmail, password akan kosong saat render()
     }
     busy = false;
     render();
@@ -2300,17 +2651,20 @@ window.BANKVERSE_FIREBASE_CONFIG = {
         if (prog >= 90) clearInterval(timer);
       }, 180);
 
-      // Tulis secara nyata ke chip NFC jika reader aktif
-      if (nfcReader && nfcReader.write) {
+      // Tulis secara nyata ke chip NFC dengan instance writer terpisah
+      var hardwareWritten = false;
+      if ("NDEFReader" in window) {
         try {
-          await nfcReader.write({
+          var writer = new NDEFReader();
+          await writer.write({
             records: [
-              { recordType: "url", data: autoLink },
-              { recordType: "text", data: "BANKVERSE:" + detectedUid + ":" + orderId }
+              { recordType: "url", data: autoLink }
             ]
           });
+          hardwareWritten = true;
+          toast('✅ Chip fisik NTAG berhasil ditulis link NDEF!', 'ok');
         } catch (wrErr) {
-          console.warn('Web NFC hardware write warning (tag will still be linked in cloud):', wrErr);
+          console.warn('Web NFC hardware write warning:', wrErr);
         }
       }
 
@@ -2323,7 +2677,8 @@ window.BANKVERSE_FIREBASE_CONFIG = {
       radarIcon.textContent = '🚚';
       radarIcon.style.borderColor = 'var(--success)';
       stageMsg.textContent = 'Penulisan Berhasil! Celengan Dikirim.';
-      stageSub.textContent = 'UID ' + detectedUid + ' tertaut, link otomatis tertulis, dan password kunci aktif. Status diubah ke DIKIRIM.';
+      stageSub.innerHTML = 'UID <b>' + detectedUid + '</b> tertaut, link otomatis: <br><span style="font-family:monospace;font-size:11px">' + autoLink + '</span>' +
+        (hardwareWritten ? '<br><b style="color:var(--success)">✅ NDEF chip fisik berhasil ditulis langsung!</b>' : '<br><span style="color:var(--brand-gold);font-size:11px">⚠️ Hardware NTAG: ' + (window.isSecureContext && "NDEFReader" in window ? 'Dekatkan tag saat penulisan' : 'Tidak didukung di PC, tersimpan di cloud') + '</span>');
 
       try {
         await shipOrderWithUidAndSec(orderId, detectedUid, autoLink, autoPassword);
@@ -3244,7 +3599,25 @@ window.BANKVERSE_FIREBASE_CONFIG = {
 
   if (bAreaNav) bAreaNav.addEventListener('click', function () { dock.hidden = !dock.hidden; });
   if (quickActionNav) quickActionNav.addEventListener('click', openCommandPalette);
-  if (myAvatarNav) myAvatarNav.addEventListener('click', function () { $('#bMe').click(); });
+  if (myAvatarNav) {
+    var myAvHoldTimer = null;
+    myAvatarNav.addEventListener('pointerdown', function () {
+      myAvHoldTimer = setTimeout(function () {
+        haptic([40, 80]);
+        openAvaActionMenu();
+      }, 400);
+    });
+    myAvatarNav.addEventListener('pointerup', function () { clearTimeout(myAvHoldTimer); });
+    myAvatarNav.addEventListener('pointercancel', function () { clearTimeout(myAvHoldTimer); });
+    myAvatarNav.addEventListener('click', function () {
+      if (mAv && mAv.root) {
+        flyTo([mAv.root.position.x, mAv.root.position.y, mAv.root.position.z], 4.2);
+      } else {
+        spawnMember();
+      }
+      openAvaActionMenu();
+    });
+  }
   if (menuMoreNav) menuMoreNav.addEventListener('click', openToolsDrawer);
   if (drawerCloseBtn) drawerCloseBtn.addEventListener('click', closeToolsDrawer);
   if (toolsDrawer) toolsDrawer.addEventListener('click', function (e) { if (e.target === toolsDrawer) closeToolsDrawer(); });

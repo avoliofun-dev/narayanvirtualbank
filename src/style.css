@@ -1926,9 +1926,7 @@ button {
 .nfc-step-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(15, 23, 42, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2092,4 +2090,109 @@ button {
   margin-top: 8px;
   display: block;
 }
+
+/* Password Field with Show/Hide Toggle */
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.password-input-wrap input {
+  width: 100%;
+  padding-right: 44px !important;
+}
+.btn-toggle-pw {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-secondary);
+  transition: opacity 0.2s;
+}
+.btn-toggle-pw:hover {
+  opacity: 0.8;
+  background: var(--surface-hover);
+}
+
+/* Ava Press-and-Hold Action Menu */
+.ava-action-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 16px;
+  animation: fadeIn 0.2s ease-out;
+}
+.ava-action-menu-card {
+  background: var(--surface-glass-solid);
+  border: 1.5px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  max-width: 400px;
+  width: 100%;
+  padding: 22px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+.ava-action-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--surface-border);
+  padding-bottom: 12px;
+}
+.ava-avatar-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: var(--brand-gold-subtle);
+  border: 2px solid var(--brand-gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+.ava-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+.ava-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 10px;
+  background: var(--surface-hover);
+  border: 1.5px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-primary);
+  cursor: pointer;
+  transition: all var(--anim-fast);
+}
+.ava-action-btn:hover {
+  background: var(--brand-blue-subtle);
+  border-color: var(--brand-blue);
+  transform: translateY(-2px);
+}
+.ava-action-icon {
+  font-size: 26px;
+}
+
 

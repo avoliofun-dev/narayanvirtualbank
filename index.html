@@ -43,8 +43,8 @@
         </div>
       </div>
 
-      <!-- Center: Contextual Suggestion Banner (Proaktif & Cerdas) -->
-      <div class="context-pill" id="contextPill" role="status" aria-live="polite">
+      <!-- Center: Contextual Suggestion Banner (Disembunyikan agar fokus pada aksi Ava) -->
+      <div class="context-pill" id="contextPill" role="status" aria-live="polite" style="display:none">
         <span class="ctx-indicator">💡</span>
         <span class="ctx-text" id="contextText">Memuat rekomendasi cerdas...</span>
         <button type="button" class="ctx-action-btn" id="contextActionBtn">Mulai</button>
@@ -87,12 +87,6 @@
       </button>
     </div>
 
-    <!-- Quick Access Floating Pill: Asisten Virtual Ava -->
-    <button type="button" class="ava-floating-pill" id="avaFab" aria-label="Temui Asisten Virtual Ava">
-      <span class="ava-fab-icon">✨</span>
-      <span class="ava-fab-text">Temui Ava</span>
-    </button>
-
     <!-- Progressive Disclosure: Secondary Pro Tools Bar (Muncul pada mode 'Mahir') -->
     <div class="pro-tools-bar" id="proToolsBar" hidden role="toolbar" aria-label="Alat Diagnostik dan Pengaturan Lanjut">
       <button type="button" class="pro-chip" id="bLab" aria-pressed="true">🏷️ Label 3D</button>
@@ -131,13 +125,9 @@
         <span class="nav-icon">🧭</span>
         <span class="nav-text">Jelajah</span>
       </button>
-      <button type="button" class="nav-item-btn" id="quickActionNav" aria-label="Aksi Cepat Transaksi">
-        <span class="nav-icon">⚡</span>
-        <span class="nav-text">Transaksi</span>
-      </button>
-      <button type="button" class="nav-item-btn" id="myAvatarNav" aria-label="Lompat ke Avatar Saya">
-        <span class="nav-icon">🚶</span>
-        <span class="nav-text">Avatar</span>
+      <button type="button" class="nav-item-btn" id="myAvatarNav" aria-label="Lompat ke Ava Member">
+        <span class="nav-icon">✨</span>
+        <span class="nav-text">Ava (Tekan)</span>
       </button>
       <button type="button" class="nav-item-btn" id="menuMoreNav" aria-label="Menu Pengaturan & Alat">
         <span class="nav-icon">⚙️</span>
