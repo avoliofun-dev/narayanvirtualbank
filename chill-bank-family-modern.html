@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#245f43"><title>Chill Bank Family — Modern NFC</title>
+<style>
+:root{--green:#286b49;--green2:#3a9561;--mint:#e8f4eb;--ink:#21382c;--muted:#83958a;--line:#e7eee8;--bg:#f4f7f3;--white:#fff;--red:#b9584a;--amber:#a5792f}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}button,input,textarea{font:inherit}button{cursor:pointer}.app{max-width:1100px;margin:auto;min-height:100vh}.top{background:white;border-bottom:1px solid var(--line);padding:15px 18px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:4}.brand{display:flex;gap:10px;align-items:center}.logo{width:40px;height:40px;border-radius:13px;background:var(--mint);display:grid;place-items:center;color:var(--green);font-size:21px}.brand b{display:block;font-weight:850;letter-spacing:-.5px}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1px;text-transform:uppercase}.role{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:white;color:var(--green);font-size:12px;font-weight:700}.layout{display:grid;grid-template-columns:220px 1fr;gap:24px;padding:24px 18px}.side{background:white;border:1px solid var(--line);border-radius:17px;padding:13px;height:max-content;position:sticky;top:86px}.nav{width:100%;border:0;background:transparent;text-align:left;padding:12px;border-radius:10px;color:#718278;font-size:13px;font-weight:650;margin:2px 0}.nav.active{background:var(--mint);color:var(--green)}.main{min-width:0}.heading{margin:4px 0 20px}.eyebrow{font-size:10px;font-weight:850;letter-spacing:1.5px;color:#8ca093}.heading h1{font-size:26px;letter-spacing:-1px;margin:5px 0}.heading p{font-size:13px;color:var(--muted);margin:0}.card{background:white;border:1px solid var(--line);border-radius:17px;padding:19px;margin-bottom:15px}.balance{background:linear-gradient(120deg,#205d3e,#3b9562);color:white;border:0;padding:24px;position:relative;overflow:hidden}.balance:after{content:"";position:absolute;width:190px;height:190px;border:1px solid #ffffff33;border-radius:50%;right:-40px;top:-95px;box-shadow:0 0 0 25px #ffffff0c,0 0 0 55px #ffffff08}.balance small{color:#d7ebdc}.amount{font-size:32px;font-weight:850;letter-spacing:-1px;margin:12px 0}.balance-foot{font-size:11px;color:#d7ebdc}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.btn{border:0;border-radius:11px;padding:12px 15px;background:var(--green);color:white;font-weight:750;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:7px}.btn.secondary{background:var(--mint);color:var(--green)}.btn.ghost{background:#f1f4f1;color:#64776b}.btn.red{background:#fff0ed;color:var(--red)}.btn:disabled{opacity:.45;cursor:not-allowed}.full{width:100%}.field{display:block;margin:0 0 14px}.field span{display:block;font-size:11px;font-weight:750;color:#53685c;margin-bottom:6px}.field input,.field textarea{width:100%;border:1px solid #e1eae2;border-radius:10px;padding:12px;background:#fbfdfb;outline:none;font-size:13px;color:var(--ink)}.field textarea{min-height:75px;resize:vertical}.field input:focus,.field textarea:focus{border-color:#77b68e;box-shadow:0 0 0 3px #e8f4eb}.row{display:flex;align-items:center;justify-content:space-between;gap:12px}.saving{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #edf1ed}.saving:last-child{border:0}.sicon{width:40px;height:40px;border-radius:12px;background:var(--mint);display:grid;place-items:center;color:var(--green)}.saving-info{flex:1;min-width:0}.saving-info b{display:block;font-size:13px}.saving-info small,.sub{display:block;color:var(--muted);font-size:10px;margin-top:4px}.saving-value{text-align:right;font-size:12px;font-weight:800}.pill{display:inline-block;border-radius:30px;padding:5px 9px;font-size:9px;font-weight:800;background:#edf2ee;color:#718278}.pill.ok{background:#e5f4e9;color:#398157}.pill.wait{background:#fff5df;color:var(--amber)}.empty{text-align:center;padding:32px 15px;color:var(--muted);font-size:12px}.empty strong{display:block;color:var(--ink);font-size:15px;margin:8px}.tx{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #edf1ed}.tx:last-child{border:0}.txicon{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:var(--mint);color:var(--green)}.txicon.out{background:#fff0e9;color:#bd7750}.txdetail{flex:1}.txdetail b{display:block;font-size:12px}.txdetail small{font-size:10px;color:var(--muted)}.txval{font-size:12px;font-weight:800}.positive{color:var(--green)}.negative{color:#b86b50}.notice{background:#f2f7f2;border:1px solid #e2eee4;padding:12px;border-radius:10px;color:#71877a;font-size:11px;line-height:1.5;margin:12px 0}.alert{padding:11px;border-radius:10px;font-size:11px;margin:10px 0}.alert.ok{background:#e8f5eb;color:#347c50}.alert.err{background:#fff0ed;color:#b9584a}.admin-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.admin-item{padding:14px 0;border-bottom:1px solid #edf1ed}.admin-item:last-child{border:0}.admin-item b{font-size:13px}.admin-item p{font-size:11px;color:var(--muted);margin:5px 0}.qr{display:block;width:210px;height:210px;object-fit:contain;margin:15px auto}.tokenurl{word-break:break-all;background:#f4f7f3;padding:10px;border-radius:8px;font-size:10px;color:#567263}.hidden{display:none!important}.mobile-nav{display:none}.hint{font-size:10px;color:var(--muted);line-height:1.6}.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#203c2c;color:white;padding:12px 17px;border-radius:12px;font-size:12px;box-shadow:0 8px 30px #0002;z-index:10;max-width:90%;text-align:center}
+@media(max-width:700px){.layout{display:block;padding:17px 13px}.side{display:none}.mobile-nav{display:flex;gap:6px;overflow:auto;background:white;padding:8px;border-bottom:1px solid var(--line)}.mobile-nav .nav{white-space:nowrap;width:auto;margin:0;padding:9px 11px}.heading h1{font-size:23px}.top{padding:12px}.card{padding:16px}.amount{font-size:29px}.grid2{gap:8px}}
+@media print{.top,.side,.mobile-nav,.heading,.noprint{display:none!important}.layout{display:block;padding:0}.card{border:0}.qr{width:300px;height:300px}}
+
+/* ===== Chill Bank Family · Modern Interactive Refresh ===== */
+:root{
+ --green:#146b57;--green2:#25a889;--mint:#e7fbf4;--ink:#142d2b;
+ --muted:#718985;--line:#e2eeea;--bg:#f2f7f6;--white:#fff;
+ --red:#c85d58;--amber:#a87928;--navy:#102f35;
+}
+*{ -webkit-tap-highlight-color:transparent }
+body{
+ background:
+ radial-gradient(ellipse at 8% 0%,rgba(48,183,145,.12),transparent 34%),
+ radial-gradient(ellipse at 100% 15%,rgba(84,142,222,.10),transparent 30%),
+ var(--bg);
+ color:var(--ink);letter-spacing:-.12px;
+}
+.app{max-width:1180px}
+.top{
+ background:rgba(255,255,255,.88);backdrop-filter:blur(18px);
+ border-bottom:1px solid rgba(220,235,229,.85);
+ padding:14px clamp(15px,3vw,30px);
+ box-shadow:0 5px 24px rgba(23,67,56,.035)
+}
+.brand{gap:12px}
+.logo{
+ width:44px;height:44px;border-radius:15px;
+ background:linear-gradient(145deg,#0e6855,#38c49a);
+ color:white;font-size:23px;box-shadow:0 8px 18px #168c6b35
+}
+.brand b{font-size:17px;letter-spacing:-.7px}
+.brand small{font-size:9px;letter-spacing:1.35px;color:#7a9690}
+.role{
+ border:1px solid #dcebe5;border-radius:999px;padding:10px 14px;
+ background:#f6fbf8;color:var(--green);font-weight:800;
+ box-shadow:0 3px 10px #183c3010
+}
+.layout{grid-template-columns:232px 1fr;gap:27px;padding:28px clamp(14px,3vw,30px)}
+.side{
+ border:1px solid #e3efea;border-radius:22px;padding:12px;
+ background:rgba(255,255,255,.82);box-shadow:0 12px 35px rgba(26,67,57,.055);
+ top:88px
+}
+.nav{
+ border-radius:13px;padding:13px 14px;margin:3px 0;color:#718983;
+ font-size:12px;transition:background .2s,transform .2s,color .2s
+}
+.nav:hover{background:#f1faf6;transform:translateX(2px);color:var(--green)}
+.nav.active{
+ background:linear-gradient(100deg,#e2f8ef,#f1fbf7);
+ color:#126b55;box-shadow:inset 3px 0 #20a47e
+}
+.heading{margin:5px 0 22px}
+.eyebrow{font-size:10px;letter-spacing:1.8px;color:#48a18a}
+.heading h1{font-size:clamp(25px,3vw,34px);letter-spacing:-1.3px;margin:7px 0 6px}
+.heading p{font-size:13px;color:#7a918b}
+.card{
+ border:1px solid rgba(222,237,230,.95);border-radius:22px;padding:21px;
+ margin-bottom:17px;background:rgba(255,255,255,.94);
+ box-shadow:0 9px 28px rgba(22,65,54,.045);
+ transition:transform .2s,box-shadow .2s
+}
+.card:hover{box-shadow:0 13px 34px rgba(22,65,54,.075)}
+.balance{
+ background:linear-gradient(120deg,#103f3d 0%,#14765e 52%,#32b38b 100%);
+ color:white;padding:27px;border-radius:24px;
+ box-shadow:0 16px 35px rgba(18,105,81,.19)
+}
+.balance:after{
+ width:230px;height:230px;right:-45px;top:-120px;
+ border-color:#ffffff2b;box-shadow:0 0 0 28px #ffffff0d,0 0 0 62px #ffffff09,0 0 0 95px #ffffff06
+}
+.balance small{color:#d6f5e9;font-size:12px}
+.amount{font-size:clamp(30px,5vw,40px);letter-spacing:-1.5px;margin:14px 0}
+.balance-foot{color:#d8f7eb;font-size:11px}
+.grid2{gap:13px}
+.btn{
+ border-radius:13px;padding:13px 17px;font-size:12px;font-weight:800;
+ background:linear-gradient(135deg,#116b57,#239d7b);
+ box-shadow:0 6px 14px rgba(18,113,87,.15);
+ transition:transform .16s,filter .16s,box-shadow .16s
+}
+.btn:hover{filter:brightness(1.04);box-shadow:0 9px 19px rgba(18,113,87,.2)}
+.btn:active{transform:scale(.975)}
+.btn.secondary{background:#e9f8f1;color:#176c56;box-shadow:none;border:1px solid #d9f0e5}
+.btn.ghost{background:#f1f6f4;color:#5d7770;box-shadow:none}
+.btn.red{background:#fff0ed;color:#b9584a;box-shadow:none}
+.field span{font-size:11px;color:#47645b}
+.field input,.field textarea{
+ border:1px solid #dfebe6;border-radius:13px;padding:13px 14px;
+ background:#f9fcfa;transition:border .2s,box-shadow .2s
+}
+.field input:focus,.field textarea:focus{border-color:#58b99a;box-shadow:0 0 0 4px #e4f8ef}
+.saving{padding:15px 0;border-bottom:1px solid #edf4f0}
+.sicon,.txicon{
+ width:43px;height:43px;border-radius:14px;
+ background:linear-gradient(145deg,#e3f8ed,#f1fbf6);color:#168064
+}
+.saving-info b{font-size:13px}
+.saving-value{font-size:13px}
+.pill{padding:6px 10px;border-radius:999px;letter-spacing:.2px}
+.pill.ok{background:#e2f8eb;color:#268454}
+.pill.wait{background:#fff5df;color:#9b7026}
+.empty{padding:38px 15px}
+.notice{
+ background:linear-gradient(120deg,#f0faf5,#f6fbf9);
+ border:1px solid #dcefe5;border-radius:14px;color:#54786b;padding:14px;
+}
+.alert{border-radius:13px;padding:13px}
+.admin-item{padding:16px 0}
+.tokenurl{border:1px dashed #cfe3d9;background:#f5faf7;border-radius:12px;padding:13px}
+.qr{border:1px solid #e7f0eb;border-radius:16px;padding:10px;background:#fff}
+.mobile-nav{
+ position:sticky;top:72px;z-index:3;background:rgba(255,255,255,.92);
+ backdrop-filter:blur(15px);padding:9px 12px;box-shadow:0 6px 18px #183c3008
+}
+.mobile-nav .nav{font-size:11px;padding:10px 12px}
+.toast{
+ bottom:calc(18px + env(safe-area-inset-bottom));border-radius:14px;
+ background:#153d36;padding:13px 18px;box-shadow:0 12px 32px #092d2540
+}
+#nfcStatus{margin-top:17px;min-height:48px;display:flex;align-items:center;justify-content:center}
+#nfcStatus:before{content:"";width:8px;height:8px;border-radius:50%;background:#a9b9b3;margin-right:9px;flex:none}
+#nfcStatus:not(:empty){line-height:1.5}
+@keyframes nfcPulse{0%{box-shadow:0 0 0 0 rgba(35,166,127,.28)}70%{box-shadow:0 0 0 17px rgba(35,166,127,0)}100%{box-shadow:0 0 0 0 rgba(35,166,127,0)}}
+#nfcStatus:has(+ form){position:relative}
+@media(max-width:700px){
+ .layout{padding:17px 13px 28px}
+ .top{padding:11px 14px}
+ .mobile-nav{top:66px;gap:5px}
+ .mobile-nav .nav{padding:9px 11px}
+ .card{padding:17px;border-radius:19px}
+ .balance{padding:23px}
+ .grid2{gap:9px}
+ .btn{min-height:44px}
+ .saving{gap:9px}
+ .saving-value{font-size:11px}
+}
+@media(prefers-reduced-motion:no-preference){
+ .card{animation:riseIn .38s ease both}
+ @keyframes riseIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+}
+
+</style>
+</head>
+<body>
+<div class="app">
+<header class="top"><div class="brand"><div class="logo">✦</div><div><b>Chill Bank Family</b><small>SMART FAMILY SAVINGS</small></div></div><button class="role" id="roleBtn">Mode Member ▾</button></header>
+<div class="mobile-nav" id="mobileNav"></div>
+<div class="layout"><aside class="side" id="sideNav"></aside><main class="main" id="view"></main></div>
+</div><div id="toast" class="toast hidden"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const KEY='chill_bank_family_prototype_v1';
+const fresh=()=>({role:'member',member:{name:'Keluarga Chill',email:'member@demo.local'},orders:[],savings:[],transactions:[]});
+let db=load(),page='dashboard',selectedSaving=null;
+function load(){try{return JSON.parse(localStorage.getItem(KEY))||fresh()}catch{return fresh()}}
+function save(){localStorage.setItem(KEY,JSON.stringify(db))}
+function id(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)}
+function token(){const a=new Uint8Array(24);crypto.getRandomValues(a);return [...a].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function money(n){return new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(Number(n||0))}
+function date(d){return new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short'}).format(new Date(d))}
+function toast(t){const el=document.querySelector('#toast');el.textContent=t;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),3400)}
+function url(s){return location.origin+location.pathname+'#t='+s.token}
+function balance(s){return db.transactions.filter(t=>t.savingId===s.id&&t.status==='sah').reduce((n,t)=>n+(t.type==='setor'?t.amount:-t.amount),0)}
+function navItems(){return db.role==='admin'?[['admin','▦ Ringkasan'],['orders','▤ Pesanan'],['savings','▣ Tabungan'],['tag','⌁ Tulis NFC / QR'],['transactions','⇄ Transaksi']]:[['dashboard','▦ Dashboard'],['request','＋ Pesan tabungan'],['scan','⌕ Scan / buka tag'],['history','◷ Riwayat']]}
+function nav(){const html=navItems().map(([k,v])=>`<button class="nav ${page===k?'active':''}" onclick="go('${k}')">${v}</button>`).join('');document.querySelector('#sideNav').innerHTML=html;document.querySelector('#mobileNav').innerHTML=html}
+function go(p){page=p;render()}
+function title(k,t,d){return `<div class="heading"><span class="eyebrow">${k}</span><h1>${t}</h1><p>${d}</p></div>`}
+function render(){document.querySelector('#roleBtn').textContent='Mode '+(db.role==='admin'?'Admin':'Member')+' ▾';nav();const root=document.querySelector('#view');if(page==='dashboard')root.innerHTML=dashboard();else if(page==='request')root.innerHTML=requestPage();else if(page==='scan')root.innerHTML=scanPage();else if(page==='history')root.innerHTML=historyPage();else if(page==='admin')root.innerHTML=adminPage();else if(page==='orders')root.innerHTML=ordersPage();else if(page==='savings')root.innerHTML=savingsPage();else if(page==='tag')root.innerHTML=tagPage();else if(page==='transactions')root.innerHTML=transactionsPage();else if(page==='detail')root.innerHTML=detailPage();if(location.hash.startsWith('#t=')){const t=decodeURIComponent(location.hash.slice(3));const s=db.savings.find(x=>x.token===t);if(s){selectedSaving=s.id;page='detail';history.replaceState(null,'',location.pathname);render()}}}
+function dashboard(){const ss=db.savings.filter(s=>s.active),total=ss.reduce((n,s)=>n+balance(s),0);return `${title('DASHBOARD','Hai, '+db.member.name.split(' ')[0]+' 👋','Sedikit demi sedikit, tabunganmu bertumbuh.')}${ss.length?`<section class="card balance"><small>Total saldo tabungan</small><div class="amount">${money(total)}</div><div class="balance-foot">${ss.length} tabungan aktif · Semangat menabung ✨</div></section><div class="grid2"><button class="btn" onclick="go('scan')">⌕ Scan / buka tag</button><button class="btn secondary" onclick="go('history')">◷ Riwayat transaksi</button></div><section class="card" style="margin-top:15px"><div class="row"><b>Tabungan saya</b><button class="btn secondary" onclick="go('request')">＋ Tambah</button></div>${ss.map(s=>`<div class="saving"><div class="sicon">▣</div><div class="saving-info"><b>${esc(s.name)}</b><small>${s.tagWritten?'Tag NFC sudah ditulis':'Menunggu penulisan tag'}</small></div><div class="saving-value">${money(balance(s))}<br><button class="btn secondary" style="margin-top:6px;padding:7px 10px" onclick="openSaving('${s.id}')">Buka</button></div></div>`).join('')}</section><section class="card"><b>Aktivitas terbaru</b>${txList(db.transactions.slice().sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,5))}</section>`:`<section class="card empty"><div style="font-size:32px">▣</div><strong>Belum ada tabungan aktif</strong>Ajukan tabungan, lalu admin akan menyetujuinya dan menyiapkan tag NFC / QR.<br><button class="btn" style="margin-top:15px" onclick="go('request')">＋ Pesan tabungan</button>${db.orders.length?`<p>Status pesanan terakhir: <span class="pill wait">${db.orders[0].status}</span></p>`:''}</section>`}`}
+function requestPage(){return `${title('PENGAJUAN','Pesan tabungan','Buat ruang khusus untuk tujuan menabungmu.')}<section class="card"><form onsubmit="createOrder(event)"><label class="field"><span>Nama tabungan</span><input id="orderName" required placeholder="Contoh: Dana liburan"></label><label class="field"><span>Target nominal (opsional)</span><input id="orderTarget" type="number" min="1" placeholder="5000000"></label><label class="field"><span>Catatan</span><textarea id="orderNote" placeholder="Tujuan tabungan…"></textarea></label><div class="notice">Tabungan baru aktif setelah disetujui admin. Kamu belum bisa setor atau tarik sebelum itu.</div><button class="btn full">Kirim pesanan</button></form></section>`}
+function createOrder(e){e.preventDefault();db.orders.unshift({id:id(),name:val('orderName'),target:Number(val('orderTarget'))||null,note:val('orderNote'),status:'pending',createdAt:new Date().toISOString()});save();toast('Pesanan dikirim. Menunggu persetujuan admin.');go('dashboard')}
+function scanPage(){return `${title('AKSES TAB','Scan / buka tag','Tekan tombol mulai, lalu tempelkan HP ke tag NFC.')}<section class="card" style="text-align:center"><div style="font-size:45px;color:var(--green)">⌕</div><b>Baca tag NFC</b><p class="sub">Pembacaan NFC harus dimulai dengan tombol di bawah. Layar tetap terbuka saat menempelkan tag.</p><button class="btn full" onclick="readNfc()">⌁ Mulai baca / tap NFC</button><div id="nfcStatus" class="notice">Belum memulai pemindaian.</div><form onsubmit="openToken(event)" style="text-align:left;margin-top:20px"><label class="field"><span>Token / URL tabungan (cadangan)</span><input id="manualToken" placeholder="Masukkan token atau tempel URL" required></label><button class="btn full">Buka tabungan</button></form></section>`}
+function openToken(e){e.preventDefault();let v=val('manualToken').trim();if(v.includes('#t='))v=v.split('#t=')[1];else if(v.includes('/t/'))v=v.split('/t/')[1];const s=db.savings.find(x=>x.token===v);if(!s){toast('Token tidak ditemukan di data lokal.');return}if(db.role!=='member'){toast('Ganti ke mode Member untuk membuka tabungan.');return}openSaving(s.id)}
+function openSaving(sid){selectedSaving=sid;go('detail')}
+function detailPage(){const s=db.savings.find(x=>x.id===selectedSaving);if(!s)return `${title('TABUNGAN','Tidak ditemukan','Tabungan ini tidak ada di perangkat ini.')}`;return `${title('DETAIL TABUNGAN',esc(s.name),'Token tag: '+s.token.slice(0,12)+'…')}<section class="card balance"><small>Saldo saat ini</small><div class="amount">${money(balance(s))}</div><div class="balance-foot">${s.tagWritten?'NFC siap digunakan':'Tag belum ditulis'}</div></section><section class="card"><div class="grid2"><button class="btn" onclick="transactionForm('setor')">＋ Setor</button><button class="btn secondary" onclick="transactionForm('tarik')">↗ Tarik</button></div><div id="txForm" class="hidden" style="margin-top:18px"></div></section><section class="card"><b>Riwayat tabungan ini</b>${txList(db.transactions.filter(t=>t.savingId===s.id).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))}</section>`}
+function transactionForm(type){const el=document.querySelector('#txForm');el.classList.remove('hidden');el.innerHTML=`<form onsubmit="saveTransaction(event,'${type}')"><label class="field"><span>Nominal (Rp)</span><input id="txAmount" type="number" min="1" required placeholder="50000"></label><label class="field"><span>Catatan</span><input id="txNote" placeholder="Opsional"></label><div class="notice">Saldo sekarang ${money(balance(db.savings.find(s=>s.id===selectedSaving)))}. Transaksi akan disimpan ke LocalStorage perangkat ini.</div><button class="btn full">Konfirmasi ${type}</button></form>`}
+function saveTransaction(e,type){e.preventDefault();const amount=Number(val('txAmount')),s=db.savings.find(x=>x.id===selectedSaving);if(!amount||amount<1){toast('Nominal tidak valid');return}if(type==='tarik'&&amount>balance(s)){toast('Saldo tidak mencukupi');return}db.transactions.unshift({id:id(),savingId:s.id,type,amount,note:val('txNote'),status:'sah',createdAt:new Date().toISOString()});save();toast('Transaksi berhasil disimpan.');render()}
+function txList(rows){if(!rows.length)return '<div class="empty">Belum ada transaksi.</div>';return rows.map(t=>`<div class="tx"><div class="txicon ${t.type==='tarik'?'out':''}">${t.type==='setor'?'↓':'↑'}</div><div class="txdetail"><b>${t.type==='setor'?'Setoran':'Penarikan'}</b><small>${date(t.createdAt)} ${t.note?'· '+esc(t.note):''}</small></div><div class="txval ${t.type==='setor'?'positive':'negative'}">${t.type==='setor'?'+':'−'}${money(t.amount)}</div></div>`).join('')}
+function historyPage(){return `${title('AKTIVITAS','Riwayat transaksi','Semua catatan setor dan tarik.') }<section class="card">${txList(db.transactions.slice().sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))}</section>`}
+function adminPage(){return `${title('PANEL ADMIN','Ringkasan admin','Kelola pesanan, tabungan, dan tag keluarga.') }<div class="grid2"><section class="card"><span class="sub">Pesanan menunggu</span><div class="amount" style="color:var(--ink)">${db.orders.filter(o=>o.status==='pending').length}</div></section><section class="card"><span class="sub">Tabungan aktif</span><div class="amount" style="color:var(--ink)">${db.savings.length}</div></section></div><section class="card"><b>Alur admin</b><p class="sub">Setujui pesanan → buat token tabungan → tulis NFC / cetak QR → member mulai transaksi.</p><div class="admin-actions"><button class="btn" onclick="go('orders')">Kelola pesanan</button><button class="btn secondary" onclick="go('tag')">Tulis NFC / QR</button></div></section>`}
+function ordersPage(){return `${title('ADMIN','Pesanan tabungan','Setujui atau tolak permintaan member.')}<section class="card">${db.orders.length?db.orders.map(o=>`<div class="admin-item"><b>${esc(o.name)}</b><p>${o.target?('Target '+money(o.target)+' · '):''}${date(o.createdAt)}</p><p>${esc(o.note||'Tanpa catatan')}</p><span class="pill ${o.status==='pending'?'wait':o.status==='disetujui'?'ok':''}">${o.status}</span>${o.status==='pending'?`<div class="admin-actions"><button class="btn" onclick="approve('${o.id}')">✓ Setujui</button><button class="btn red" onclick="reject('${o.id}')">Tolak</button></div>`:''}</div>`).join(''):'<div class="empty">Belum ada pesanan masuk.</div>'}</section>`}
+function approve(oid){const o=db.orders.find(x=>x.id===oid);if(!o)return;const s={id:id(),orderId:o.id,memberId:'local-member',name:o.name,token:token(),tagWritten:false,active:true,createdAt:new Date().toISOString()};db.savings.unshift(s);o.status='disetujui';save();toast('Disetujui. Token tabungan telah dibuat.');go('tag')}
+function reject(oid){const why=prompt('Alasan penolakan:');if(why===null)return;const o=db.orders.find(x=>x.id===oid);o.status='ditolak';o.reason=why||'Tidak memenuhi ketentuan';save();render()}
+function savingsPage(){return `${title('ADMIN','Daftar tabungan','Pilih tabungan untuk menulis tag NFC / QR.')}<section class="card">${db.savings.length?db.savings.map(s=>`<div class="saving"><div class="sicon">▣</div><div class="saving-info"><b>${esc(s.name)}</b><small>${s.tagWritten?'Tag sudah ditulis':'Tag belum ditulis'} · Saldo ${money(balance(s))}</small></div><button class="btn secondary" onclick="selectTag('${s.id}')">Tulis tag</button></div>`).join(''):'<div class="empty">Belum ada tabungan yang disetujui.</div>'}</section>`}
+function selectTag(sid){selectedSaving=sid;go('tag')}
+function tagPage(){const s=db.savings.find(x=>x.id===selectedSaving)||db.savings[0];if(!s)return `${title('ADMIN','Tulis NFC / QR','Setujui minimal satu pesanan lebih dulu.')}<section class="card empty">Belum ada tabungan. Buka menu Pesanan untuk menyetujui pengajuan.</section>`;selectedSaving=s.id;return `${title('ADMIN · NFC / QR','Tulis tag tabungan',esc(s.name))}<section class="card"><span class="pill ${s.tagWritten?'ok':'wait'}">${s.tagWritten?'Tag sudah ditulis':'Menunggu penulisan tag'}</span><h3 style="margin:14px 0 5px">1. Tulis URL ke NFC tag</h3><p class="sub">Tekan tombol, lalu dekatkan tag NFC kosong/yang bisa ditulis ke bagian belakang HP saat browser meminta.</p><button class="btn full" onclick="writeNfc()">⌁ Mulai tulis NFC</button><div class="notice">Wajib Chrome Android + HTTPS (atau localhost untuk pengembangan), NFC aktif, dan izin browser. Web NFC tidak didukung di semua HP.</div><h3 style="margin:18px 0 5px">2. QR Code cadangan</h3><div id="qrcode" class="qr"></div><div class="tokenurl" id="tagUrl">${esc(url(s))}</div><div class="admin-actions"><button class="btn secondary" onclick="copyUrl()">Salin URL</button><button class="btn" onclick="window.print()">Cetak QR</button></div><p class="hint">Tag hanya menyimpan URL dan token acak, tidak menyimpan saldo atau data pribadi.</p></section>`}
+async function writeNfc(){const s=db.savings.find(x=>x.id===selectedSaving);if(!s)return;try{if(!window.isSecureContext)throw Error('Halaman belum HTTPS. Upload ke hosting HTTPS; file:// tidak bisa memakai Web NFC.');if(!('NDEFReader'in window))throw Error('Web NFC tidak tersedia. Gunakan Chrome Android terbaru, bukan browser dalam aplikasi.');if(navigator.permissions?.query){try{const p=await navigator.permissions.query({name:'nfc'});if(p.state==='denied')throw Error('Izin NFC ditolak. Ubah izin situs di Chrome lalu muat ulang.')}catch(e){if(e.message.includes('Izin NFC'))throw e;}}toast('Siap menulis. Tempelkan tag NFC sekarang…');const writer=new NDEFReader();await writer.write({records:[{recordType:'url',data:url(s)}]},{overwrite:true});s.tagWritten=true;save();toast('Berhasil menulis URL ke tag NFC. Coba tap dari menu Member.');render()}catch(e){toast('NFC gagal: '+(e.message||'Periksa NFC dan izin Chrome.'))}}
+async function readNfc(){const status=document.getElementById('nfcStatus');const say=m=>{if(status)status.textContent=m};try{if(!window.isSecureContext)throw Error('Halaman bukan HTTPS. Buka versi hosting HTTPS, bukan file dari Download.');if(!('NDEFReader'in window))throw Error('Web NFC tidak didukung browser ini. Gunakan Chrome Android terbaru.');const reader=new NDEFReader();say('Meminta izin NFC…');await reader.scan();say('Pemindai aktif. Tempelkan bagian belakang HP ke tag NFC.');reader.onreadingerror=()=>say('Tag terdeteksi tetapi tidak dapat dibaca. Coba tag NDEF lain.');reader.onreading=event=>{try{let found='';for(const r of event.message.records){if(r.recordType==='url'){found=typeof r.data==='string'?r.data:new TextDecoder().decode(r.data);break;}if(r.recordType==='text'){found=new TextDecoder().decode(r.data);break;}}if(!found){say('Tag terbaca, tetapi tidak berisi URL/token yang dikenali.');return;}say('Tag terbaca. Membuka tabungan…');let v=found.trim();if(v.includes('#t='))v=v.split('#t=')[1].split(/[& ]/)[0];else if(v.includes('/t/'))v=v.split('/t/')[1].split(/[/?#]/)[0];const target=db.savings.find(x=>x.token===v);if(!target){say('Tag terbaca, tetapi token tidak ditemukan di data LocalStorage perangkat ini.');return;}if(db.role!=='member'){db.role='member';save();}history.replaceState(null,'',location.pathname);openSaving(target.id);}catch(err){say('Gagal memproses isi tag: '+err.message);}};}catch(e){say('Tidak bisa mulai NFC: '+(e.message||'Periksa pengaturan NFC dan izin situs.'));}}
+
+function transactionsPage(){return `${title('ADMIN','Semua transaksi','Daftar transaksi yang tercatat pada prototype ini.')}<section class="card">${txList(db.transactions.slice().sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))}</section>`}
+function val(id){return document.getElementById(id)?.value||''}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+document.querySelector('#roleBtn').onclick=()=>{db.role=db.role==='member'?'admin':'member';save();page=db.role==='admin'?'admin':'dashboard';render();toast('Beralih ke mode '+db.role)}
+document.addEventListener('click',e=>{if(e.target.closest('[onclick="window.print()"]'))return});
+render();
+if(location.hash.startsWith('#t=')){setTimeout(render,0)}
+// Generate QR after page paint (qrcodejs loaded from CDN).
+const observer=new MutationObserver(()=>{const s=db.savings.find(x=>x.id===selectedSaving)||db.savings[0],el=document.getElementById('qrcode');if(el&&s&&!el.dataset.ready&&window.QRCode){el.dataset.ready='1';new QRCode(el,{text:url(s),width:210,height:210,colorDark:'#20382c',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M})}});
+observer.observe(document.querySelector('#view'),{childList:true,subtree:true});
+</script>
+</body></html>
