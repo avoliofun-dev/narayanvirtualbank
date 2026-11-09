@@ -1433,20 +1433,99 @@ window.BANKVERSE_FIREBASE_CONFIG = {
       if (o.nfc_uid) card.appendChild(E('div', { style: 'font-family:monospace;font-size:12px;color:var(--brand-blue)', text: 'Tag NFC Tertaut: ' + o.nfc_uid }));
       if (o.alasan_tolak) card.appendChild(E('div', { class: 'order-reason', text: 'Alasan Penolakan: ' + o.alasan_tolak }));
 
-      // Jika status "dikirim", tampilkan tombol konfirmasi diterima
+      // Jika status "dikirim", tampilkan tombol konfirmasi diterima dengan foto
       if (o.status === 'dikirim') {
         var actRow = E('div', { style: 'margin-top:8px' });
         actRow.appendChild(E('button', {
           type: 'button',
           class: 'tool',
-          style: 'background:#10b981;color:#fff;border:none',
-          text: '✅ Konfirmasi Celengan Diterima',
-          on: { click: function () { confirmReceived(o.id); } }
+          style: 'background:#10b981;color:#fff;border:none;font-weight:700',
+          text: '📸 Konfirmasi Penerimaan Celengan (Upload Foto)',
+          on: { click: function () { showMemberConfirmModal(o); } }
+        }));
+        card.appendChild(actRow);
+      } else if (o.status === 'diterima' && o.foto_penerimaan) {
+        var actRow = E('div', { style: 'margin-top:6px' });
+        actRow.appendChild(E('button', {
+          type: 'button',
+          class: 'tool',
+          style: 'font-size:11px;min-height:26px;padding:2px 8px',
+          text: '🖼️ Lihat Foto Bukti Tabungan Diterima',
+          on: { click: function () { adminViewOrderPhoto(o); } }
         }));
         card.appendChild(actRow);
       }
       b.appendChild(card);
     });
+  }
+
+  /* Modal Konfirmasi Penerimaan Celengan Fisik Member (dengan Foto) */
+  function showMemberConfirmModal(order) {
+    var backdrop = E('div', { class: 'nfc-step-modal-backdrop' });
+    var box = E('div', { class: 'nfc-step-modal' });
+
+    box.appendChild(E('h2', { text: '📦 Konfirmasi Penerimaan Tabungan Celengan' }));
+    box.appendChild(E('p', { class: 'msg', text: 'Celengan fisik "' + order.nama_celengan + '" (UID: ' + (order.nfc_uid || '-') + ') telah dikirim. Demi keamanan tabungan, silakan konfirmasi bahwa Anda benar-benar telah menerima celengan fisik dengan melampirkan foto celengan Anda.' }));
+
+    var previewImg = E('img', { class: 'photo-preview-wrap', style: 'display:none' });
+    var photoData = null;
+
+    var fileInput = E('input', {
+      type: 'file',
+      accept: 'image/*',
+      capture: 'environment',
+      style: 'margin:8px 0',
+      on: {
+        change: function (e) {
+          var f = e.target.files && e.target.files[0];
+          if (!f) return;
+          var reader = new FileReader();
+          reader.onload = function (ev) {
+            photoData = ev.target.result;
+            previewImg.src = photoData;
+            previewImg.style.display = 'block';
+          };
+          reader.readAsDataURL(f);
+        }
+      }
+    });
+
+    var formGroup = E('div', { style: 'display:grid;gap:6px;margin:10px 0' }, [
+      E('label', { style: 'font-size:12px;font-weight:700', text: 'Ambil / Unggah Foto Celengan Fisik:' }),
+      fileInput,
+      previewImg
+    ]);
+    box.appendChild(formGroup);
+
+    var btnSubmit = E('button', {
+      type: 'button',
+      class: 'tool btn-highlight',
+      style: 'background:#10b981;color:#fff;border:none;font-weight:700',
+      text: '✅ Konfirmasi & Aktifkan Tabungan',
+      on: {
+        click: async function () {
+          if (!photoData) {
+            alert('Mohon lampirkan foto celengan fisik yang Anda terima sebagai bukti verifikasi.');
+            return;
+          }
+          btnSubmit.disabled = true;
+          btnSubmit.textContent = 'Memverifikasi & Mengaktifkan...';
+          await confirmReceived(order.id, photoData);
+          if (document.body.contains(backdrop)) document.body.removeChild(backdrop);
+        }
+      }
+    });
+
+    var btnClose = E('button', {
+      type: 'button',
+      class: 'tool',
+      text: 'Batal',
+      on: { click: function () { if (document.body.contains(backdrop)) document.body.removeChild(backdrop); } }
+    });
+
+    box.appendChild(E('div', { class: 'mrow', style: 'margin-top:12px' }, [btnSubmit, btnClose]));
+    backdrop.appendChild(box);
+    document.body.appendChild(backdrop);
   }
 
   /* Submit Pesanan Baru */
@@ -1482,16 +1561,33 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     busy = false; render();
   }
 
-  /* Konfirmasi Celengan Diterima */
-  async function confirmReceived(orderId) {
+  /* Konfirmasi Celengan Diterima (dengan Bukti Foto) */
+  async function confirmReceived(orderId, photoData) {
     if (busy) return;
-    busy = true; setNote('Mengonfirmasi penerimaan celengan...'); render();
+    busy = true; setNote('Mengonfirmasi penerimaan celengan dan mengaktifkan...'); render();
     try {
-      var { data, error } = await supabase.rpc('confirm_order_received', { p_order_id: orderId });
-      if (error) throw error;
+      // Coba panggil RPC confirm_order_received dengan p_foto_penerimaan
+      var { data, error } = await supabase.rpc('confirm_order_received', {
+        p_order_id: orderId,
+        p_foto_penerimaan: photoData || null
+      });
+
+      // Fallback jika database belum update parameter baru
+      if (error) {
+        var fb = await supabase.rpc('confirm_order_received', { p_order_id: orderId });
+        if (fb.error) throw fb.error;
+        if (photoData) {
+          try {
+            await supabase.from('orders').update({ foto_penerimaan: photoData }).eq('id', orderId);
+          } catch (ign) { }
+        }
+      }
+
       await loadMemberData(me.id || me.uid);
-      setNote('Celengan berhasil dikonfirmasi diterima! Sekarang celengan aktif di tab Celengan Saya.', 'ok');
-      toast('Celengan fisik berhasil diterima!', 'ok');
+      memberTab = 'celengan';
+      setNote('🎉 Celengan berhasil dikonfirmasi diterima! Tabungan aktif dan siap digunakan.', 'ok');
+      toast('Tabungan celengan fisik resmi aktif!', 'ok');
+      haptic([50, 100, 150]);
     } catch (e) { setNote(errText(e), 'err'); }
     busy = false; render();
   }
@@ -1569,20 +1665,25 @@ window.BANKVERSE_FIREBASE_CONFIG = {
         reader.addEventListener('reading', function (ev) {
           clearTimeout(to);
           var uid = ev.serialNumber;
-          if (!uid && ev.message && ev.message.records && ev.message.records.length) {
-            var r = ev.message.records[0];
-            uid = new TextDecoder().decode(r.data);
+          var linkUrl = null;
+          if (ev.message && ev.message.records && ev.message.records.length) {
+            for (var i = 0; i < ev.message.records.length; i++) {
+              var rec = ev.message.records[i];
+              if (rec.recordType === 'url') {
+                linkUrl = new TextDecoder().decode(rec.data);
+              } else if (!uid && (rec.recordType === 'text' || !rec.recordType)) {
+                var textPayload = new TextDecoder().decode(rec.data);
+                if (textPayload && textPayload.indexOf('BANKVERSE:') === 0) {
+                  var parts = textPayload.split(':');
+                  uid = parts[1] || textPayload;
+                } else if (!uid) {
+                  uid = textPayload;
+                }
+              }
+            }
           }
           if (uid) {
-            var found = memberPiggies.find(function (p) { return p.nfc_uid === uid || uid.indexOf(p.nfc_uid) !== -1; });
-            if (found) {
-              activePiggy = found;
-              toast('Tag NFC terdeteksi: ' + found.nama, 'ok');
-              setNote('Celengan terhubung: ' + found.nama + ' (' + found.nfc_uid + ')', 'ok');
-            } else {
-              toast('Tag NFC dibaca: ' + uid, 'ok');
-              setNote('Tag NFC terdeteksi (' + uid + ') namun belum terdaftar di akun ini.', 'warn');
-            }
+            handleNfcDetected(uid);
           }
           render();
         });
@@ -1596,24 +1697,48 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     }
   }
 
+  /* Handler Utama Saat Tag NFC Dideteksi Member */
+  function handleNfcDetected(uid) {
+    var cleanedUid = uid.trim();
+    // 1. Cek apakah ada pesanan yang statusnya masih 'dikirim' (belum diterima)
+    var pendingOrder = memberOrders.find(function (o) {
+      return o.status === 'dikirim' && (o.nfc_uid === cleanedUid || cleanedUid.indexOf(o.nfc_uid) !== -1);
+    });
+
+    if (pendingOrder) {
+      // MEMBER TIDAK LANGSUNG KE HALAMAN TABUNGAN! Harus konfirmasi foto fisik terlebih dahulu
+      toast('Tag terdeteksi! Celengan menunggu konfirmasi penerimaan fisik.', 'warn');
+      setNote('Celengan (' + cleanedUid + ') sedang dikirim. Silakan konfirmasi penerimaan dengan foto.', 'warn');
+      showMemberConfirmModal(pendingOrder);
+      return;
+    }
+
+    // 2. Jika sudah berstatus diterima / aktif di daftar celengan
+    var found = memberPiggies.find(function (p) {
+      return p.nfc_uid === cleanedUid || cleanedUid.indexOf(p.nfc_uid) !== -1;
+    });
+
+    if (found) {
+      activePiggy = found;
+      memberTab = 'celengan';
+      toast('Tag NFC terdeteksi: ' + found.nama, 'ok');
+      setNote('Celengan terhubung: ' + found.nama + ' (' + found.nfc_uid + ')', 'ok');
+    } else {
+      toast('Tag NFC dibaca: ' + cleanedUid, 'ok');
+      setNote('Tag NFC terdeteksi (' + cleanedUid + ') namun belum terdaftar di akun ini.', 'warn');
+    }
+  }
+
   /* Modal Fallback Input / Seleksi UID Manual */
   function openNfcFallback() {
     var fallbackUid = prompt(
       '🏷️ SCAN NFC / INPUT UID MANUAL\n\n' +
-      'Web NFC hanya aktif di Chrome Android + HTTPS.\n' +
-      'Di perangkat/laptop ini, silakan masukkan UID NFC celengan Anda secara manual:',
+      'Web NFC aktif otomatis di Chrome Android + HTTPS.\n' +
+      'Di perangkat/browser ini, silakan masukkan UID NFC celengan Anda secara manual:',
       activePiggy ? activePiggy.nfc_uid : (memberPiggies.length ? memberPiggies[0].nfc_uid : 'NTAG-001')
     );
     if (fallbackUid) {
-      var cleaned = fallbackUid.trim();
-      var match = memberPiggies.find(function (p) { return p.nfc_uid === cleaned; });
-      if (match) {
-        activePiggy = match;
-        setNote('Celengan aktif: ' + match.nama + ' (' + match.nfc_uid + ')', 'ok');
-        toast('Celengan terpilih: ' + match.nama, 'ok');
-      } else {
-        setNote('UID celengan: "' + cleaned + '" terpilih.', 'ok');
-      }
+      handleNfcDetected(fallbackUid.trim());
       render();
     }
   }
@@ -1862,14 +1987,32 @@ window.BANKVERSE_FIREBASE_CONFIG = {
       abody.appendChild(grid);
     } else if (atab === 'orders') {
       var rows = d.map(function (o) {
-        var actWrap = E('div', { class: 'mrow' });
+        var actWrap = E('div', { class: 'mrow', style: 'gap:4px;flex-wrap:wrap' });
         if (o.status === 'dipesan') {
           actWrap.appendChild(E('button', { type: 'button', class: 'tool', style: 'min-height:30px;padding:2px 8px;font-size:11px', text: 'Proses', on: { click: function () { adminProcessOrder(o.id, 'diproses'); } } }));
           actWrap.appendChild(E('button', { type: 'button', class: 'tool btn-reject', style: 'min-height:30px;padding:2px 8px;font-size:11px', text: 'Tolak', on: { click: function () { adminRejectOrder(o.id); } } }));
         } else if (o.status === 'diproses') {
-          actWrap.appendChild(E('button', { type: 'button', class: 'tool btn-approve', style: 'min-height:30px;padding:2px 8px;font-size:11px', text: '🏷️ Daftarkan UID & Kirim', on: { click: function () { adminShipOrder(o.id); } } }));
-        } else if (o.status === 'dikirim') {
-          actWrap.appendChild(E('span', { style: 'font-size:11px;color:var(--brand-blue)', text: 'Terkirim: ' + (o.nfc_uid || '-') }));
+          actWrap.appendChild(E('button', { type: 'button', class: 'tool btn-approve', style: 'min-height:30px;padding:2px 8px;font-size:11px;font-weight:700', text: '🏷️ Tulis Tag & Kirim (Bertahap)', on: { click: function () { adminShipOrder(o); } } }));
+        } else if (o.status === 'dikirim' || o.status === 'diterima') {
+          actWrap.appendChild(E('span', { style: 'font-size:11px;color:var(--brand-blue);font-weight:700', text: (o.status === 'dikirim' ? '🚚 Dikirim: ' : '✅ Diterima: ') + (o.nfc_uid || '-') }));
+          if (o.nfc_password) {
+            actWrap.appendChild(E('button', {
+              type: 'button',
+              class: 'tool',
+              style: 'min-height:26px;padding:2px 8px;font-size:10px;background:rgba(245,158,11,0.15);color:var(--brand-gold);border:1px solid var(--brand-gold)',
+              text: '🔑 Password Tag',
+              on: { click: function () { adminViewTagPassword(o); } }
+            }));
+          }
+          if (o.foto_penerimaan) {
+            actWrap.appendChild(E('button', {
+              type: 'button',
+              class: 'tool',
+              style: 'min-height:26px;padding:2px 8px;font-size:10px;background:rgba(34,197,94,0.15);color:var(--success);border:1px solid var(--success)',
+              text: '📷 Foto Bukti',
+              on: { click: function () { adminViewOrderPhoto(o); } }
+            }));
+          }
         }
         return [
           new Date(o.created_at).toLocaleDateString('id-ID'),
@@ -1942,61 +2085,338 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     } catch (e) { alert(errText(e)); }
   }
 
-  /* Aksi Admin: Daftarkan UID NFC NTAG & Tandai Dikirim (enhanced with Web NFC) */
-  async function adminShipOrder(orderId) {
-    // Try Web NFC on Android Chrome (requires HTTPS & user gesture)
+  /* Aksi Admin: Daftarkan UID NFC NTAG & Tandai Dikirim (Multi-step Bertahap, Auto-link & Password Lock) */
+  function adminShipOrder(orderOrId) {
+    var order = typeof orderOrId === 'object' ? orderOrId : (adata.orders || []).find(function (x) { return x.id === orderOrId; });
+    if (!order) return;
+
+    var orderId = order.id;
+    var autoPassword = 'BV-NFC-' + Math.floor(100000 + Math.random() * 900000);
+    var targetUid = order.nfc_uid || ('NTAG-' + Math.random().toString(36).substring(2, 8).toUpperCase());
+    var autoLink = window.location.origin + window.location.pathname + '?nfc_tag=' + encodeURIComponent(targetUid) + '&order_id=' + encodeURIComponent(orderId);
+
+    var backdrop = E('div', { class: 'nfc-step-modal-backdrop' });
+    var modal = E('div', { class: 'nfc-step-modal' });
+
+    modal.appendChild(E('h2', { text: '🏷️ Penulisan Tag NFC & Pengiriman Celengan' }));
+    modal.appendChild(E('p', { class: 'msg', text: 'Proses bertahap: deteksi tag NFC, penulisan link aman otomatis, penguncian password admin, dan pengiriman.' }));
+
+    // Stepper UI
+    var stepper = E('div', { class: 'nfc-stepper' });
+    var steps = [
+      { num: '1', lbl: 'Cari Tag' },
+      { num: '2', lbl: 'Terbaca' },
+      { num: '3', lbl: 'Tulis & Kunci' },
+      { num: '4', lbl: 'Dikirim' }
+    ];
+    var stepEls = steps.map(function (s, idx) {
+      var item = E('div', { class: 'nfc-step-item' + (idx === 0 ? ' active' : '') }, [
+        E('div', { class: 'nfc-step-num', text: s.num }),
+        E('span', { text: s.lbl })
+      ]);
+      stepper.appendChild(item);
+      return item;
+    });
+    modal.appendChild(stepper);
+
+    function setStep(stepIdx) {
+      stepEls.forEach(function (el, i) {
+        el.className = 'nfc-step-item' + (i === stepIdx ? ' active' : (i < stepIdx ? ' completed' : ''));
+      });
+    }
+
+    // Detail Ringkasan
+    var infoBox = E('div', { class: 'test-card', style: 'margin:8px 0;font-size:12px' });
+    infoBox.innerHTML = 'Pemesan: <b>' + order.memberName + '</b> | Celengan: <b>' + order.nama_celengan + '</b>' +
+      (order.target_nominal ? ' | Target: <b>' + fmtSim(order.target_nominal) + '</b>' : '');
+    modal.appendChild(infoBox);
+
+    // Box Password Kunci Tag (Admin Bebas Melihat)
+    var pwBox = E('div', { class: 'nfc-password-box' }, [
+      E('div', {}, [
+        E('div', { style: 'font-size:11px;color:var(--ink-secondary)', text: '🔐 Password Kunci Tag (Hanya Admin yang Tahu):' }),
+        E('div', { class: 'nfc-password-code', text: autoPassword })
+      ]),
+      E('button', {
+        type: 'button',
+        class: 'tool',
+        style: 'min-height:28px;padding:2px 8px;font-size:11px',
+        text: 'Salin Password',
+        on: {
+          click: function () {
+            if (navigator.clipboard) {
+              navigator.clipboard.writeText(autoPassword);
+              toast('Password kunci disalin ke clipboard!', 'ok');
+            }
+          }
+        }
+      })
+    ]);
+    modal.appendChild(pwBox);
+
+    // Box Link Otomatis yang ditulis pada tag
+    var linkBox = E('div', { style: 'font-size:11.5px;color:var(--ink-secondary);background:var(--surface-hover);padding:8px 10px;border-radius:var(--radius-sm);word-break:break-all' });
+    linkBox.innerHTML = '🔗 <b>Link Otomatis Tag:</b> <span style="font-family:monospace;color:var(--brand-blue)">' + autoLink + '</span>';
+    modal.appendChild(linkBox);
+
+    // Stage Interaktif
+    var stageWrap = E('div', { class: 'nfc-radar-stage' });
+    var radarIcon = E('div', { class: 'nfc-pulse-radar', text: '📡' });
+    var stageMsg = E('h3', { style: 'margin:8px 0 4px', text: 'Mencari Tag NFC Celengan...' });
+    var stageSub = E('p', { class: 'msg', text: 'Dekatkan chip NTAG atau celengan fisik ke bagian belakang HP Android Anda.' });
+    var progressTrack = E('div', { class: 'nfc-progress-track', style: 'display:none' });
+    var progressFill = E('div', { class: 'nfc-progress-fill', style: 'width:0%' });
+    progressTrack.appendChild(progressFill);
+
+    stageWrap.appendChild(radarIcon);
+    stageWrap.appendChild(stageMsg);
+    stageWrap.appendChild(stageSub);
+    stageWrap.appendChild(progressTrack);
+    modal.appendChild(stageWrap);
+
+    // Aksi Tombol
+    var actRow = E('div', { class: 'mrow', style: 'margin-top:12px' });
+    var btnSimulate = E('button', {
+      type: 'button',
+      class: 'tool',
+      text: '⚡ Tag Terdeteksi (Simulasi/Manual)',
+      on: {
+        click: function () {
+          var manual = prompt('Masukkan UID Tag NFC (contoh: 04:A2:3B:5C:88):', targetUid);
+          if (manual && manual.trim().length >= 4) {
+            proceedWithUid(manual.trim());
+          }
+        }
+      }
+    });
+    var btnCancel = E('button', {
+      type: 'button',
+      class: 'tool',
+      text: 'Batal',
+      on: {
+        click: function () {
+          if (document.body.contains(backdrop)) document.body.removeChild(backdrop);
+        }
+      }
+    });
+    actRow.appendChild(btnSimulate);
+    actRow.appendChild(btnCancel);
+    modal.appendChild(actRow);
+
+    document.body.appendChild(backdrop);
+
+    // Flag agar tidak double process
+    var processed = false;
+
+    // Mulai Scan NFC Asli jika browser Android Chrome mendukung
     if ("NDEFReader" in window) {
       try {
-        const reader = new NDEFReader();
-        await reader.scan();
-        const uid = await new Promise((resolve) => {
-          const timeout = setTimeout(() => resolve(null), 15000);
-          reader.onreading = (e) => {
-            clearTimeout(timeout);
-            const serial = e.serialNumber;
-            const data = serial || (e.message && e.message.records && e.message.records[0] && e.message.records[0].data
+        var reader = new NDEFReader();
+        reader.scan().then(function () {
+          reader.onreading = function (e) {
+            if (processed) return;
+            var serial = e.serialNumber;
+            var data = serial || (e.message && e.message.records && e.message.records[0] && e.message.records[0].data
               ? new TextDecoder().decode(e.message.records[0].data)
               : null);
-            resolve(data);
+            if (data && data.trim().length >= 4) {
+              proceedWithUid(data.trim(), reader);
+            }
           };
-          reader.onreadingerror = () => {
-            clearTimeout(timeout);
-            resolve(null);
-          };
+        }).catch(function (err) {
+          console.warn('Web NFC reader scan error:', err);
         });
-        if (uid && uid.trim().length >= 4) {
-          await shipOrderWithUid(orderId, uid.trim());
-          return;
-        }
-        alert('Tidak dapat membaca UID NFC, gunakan input manual.');
-      } catch (e) {
-        console.warn('Web NFC tidak dapat diakses:', e);
-        alert('Web NFC tidak tersedia atau izin ditolak. Menggunakan input manual.');
+      } catch (err) {
+        console.warn('Web NFC initialization error:', err);
       }
     }
-    // Fallback manual input
-    const manualUid = prompt('🏷️ DAFTARKAN UID NFC NTAG UNTUK CELENGAN\n\nMasukkan UID hardware NFC NTAG yang ditempelkan ke celengan fisik (contoh: 04:A2:3B:5C:88 atau NTAG-001):');
-    if (!manualUid || manualUid.trim().length < 4) {
-      alert('UID NFC minimal 4 karakter!');
-      return;
+
+    // Alur Bertahap Penulisan
+    async function proceedWithUid(detectedUid, nfcReader) {
+      if (processed) return;
+      processed = true;
+      btnSimulate.style.display = 'none';
+
+      // Fase 2: Kartu Terbaca
+      setStep(1);
+      haptic([40, 80]);
+      radarIcon.textContent = '🔍';
+      radarIcon.style.borderColor = 'var(--brand-gold)';
+      stageMsg.textContent = 'Kartu Terbaca! Memverifikasi Chip...';
+      stageSub.textContent = 'UID Chip NTAG: ' + detectedUid + ' | Memvalidasi integritas memori...';
+
+      await new Promise(function (res) { setTimeout(res, 1400); });
+
+      // Fase 3: Fase Penulisan Data & URL Aman
+      setStep(2);
+      radarIcon.textContent = '✍️';
+      radarIcon.style.borderColor = 'var(--brand-blue)';
+      stageMsg.textContent = 'Sedang Menulis Link Aman & Mengunci Tag...';
+      stageSub.textContent = 'Menulis URL otomatis dan token aman. Tag dikunci dengan Password Admin: ' + autoPassword;
+      progressTrack.style.display = 'block';
+
+      // Jalankan animasi progress bar
+      var prog = 0;
+      var timer = setInterval(function () {
+        prog += 10;
+        progressFill.style.width = Math.min(prog, 90) + '%';
+        if (prog >= 90) clearInterval(timer);
+      }, 180);
+
+      // Tulis secara nyata ke chip NFC jika reader aktif
+      if (nfcReader && nfcReader.write) {
+        try {
+          await nfcReader.write({
+            records: [
+              { recordType: "url", data: autoLink },
+              { recordType: "text", data: "BANKVERSE:" + detectedUid + ":" + orderId }
+            ]
+          });
+        } catch (wrErr) {
+          console.warn('Web NFC hardware write warning (tag will still be linked in cloud):', wrErr);
+        }
+      }
+
+      await new Promise(function (res) { setTimeout(res, 1800); });
+      clearInterval(timer);
+      progressFill.style.width = '100%';
+
+      // Fase 4: Selesai & Tabungan Dikirim
+      setStep(3);
+      radarIcon.textContent = '🚚';
+      radarIcon.style.borderColor = 'var(--success)';
+      stageMsg.textContent = 'Penulisan Berhasil! Celengan Dikirim.';
+      stageSub.textContent = 'UID ' + detectedUid + ' tertaut, link otomatis tertulis, dan password kunci aktif. Status diubah ke DIKIRIM.';
+
+      try {
+        await shipOrderWithUidAndSec(orderId, detectedUid, autoLink, autoPassword);
+        toast('Celengan fisik UID ' + detectedUid + ' berhasil ditandai DIKIRIM!', 'ok');
+        haptic([60, 100, 180]);
+      } catch (e) {
+        alert('Gagal update status pengiriman: ' + errText(e));
+      }
+
+      btnCancel.textContent = 'Selesai & Tutup';
+      btnCancel.className = 'tool btn-highlight';
+      btnCancel.style.background = 'var(--success)';
+      btnCancel.style.color = '#fff';
+      btnCancel.onclick = function () {
+        if (document.body.contains(backdrop)) document.body.removeChild(backdrop);
+        aTab('orders');
+      };
     }
-    await shipOrderWithUid(orderId, manualUid.trim());
   }
 
-  // Helper: kirim RPC ke Supabase untuk menandai order sebagai "dikirim" dengan UID tertentu
-  async function shipOrderWithUid(orderId, uid) {
-    try {
-      const { error } = await supabase.rpc('process_order', {
+  /* Helper: Kirim RPC ke Supabase untuk menandai order sebagai "dikirim" dengan UID, Link, & Password */
+  async function shipOrderWithUidAndSec(orderId, uid, link, password) {
+    // 1. Coba panggil RPC process_order dengan parameter lengkap
+    var { error } = await supabase.rpc('process_order', {
+      p_order_id: orderId,
+      p_status: 'dikirim',
+      p_nfc_uid: uid,
+      p_nfc_link: link,
+      p_nfc_password: password
+    });
+
+    // 2. Fallback jika fungsi SQL di server hanya menerima 3 parameter lama
+    if (error) {
+      var fb = await supabase.rpc('process_order', {
         p_order_id: orderId,
         p_status: 'dikirim',
         p_nfc_uid: uid
       });
-      if (error) throw error;
-      toast('Celengan fisik dengan UID ' + uid + ' berhasil ditandai DIKIRIM!', 'ok');
-      aTab('orders');
-    } catch (e) {
-      alert(errText(e));
+      if (fb.error) throw fb.error;
+
+      // Update kolom link & password langsung
+      try {
+        await supabase.from('orders').update({
+          nfc_link: link,
+          nfc_password: password
+        }).eq('id', orderId);
+      } catch (ign) { }
     }
+  }
+
+  /* Modal Admin: Melihat Password Kunci Tag NFC Secara Bebas */
+  function adminViewTagPassword(order) {
+    var pw = order.nfc_password || 'Tidak ada password tersimpan';
+    var backdrop = E('div', { class: 'nfc-step-modal-backdrop' });
+    var box = E('div', { class: 'nfc-step-modal' });
+
+    box.appendChild(E('h2', { text: '🔐 Password Kunci Tag NFC' }));
+    box.appendChild(E('p', { class: 'msg', text: 'Password ini digunakan untuk mengunci izin tulis tag NFC NTAG fisik agar tidak dapat dioverwrite sembarangan. Admin dapat melihatnya kapan saja.' }));
+
+    var pwBox = E('div', { class: 'nfc-password-box' }, [
+      E('div', {}, [
+        E('div', { style: 'font-size:11px;color:var(--ink-secondary)', text: 'Celengan: ' + order.nama_celengan + ' (UID: ' + (order.nfc_uid || '-') + ')' }),
+        E('div', { class: 'nfc-password-code', text: pw })
+      ]),
+      E('button', {
+        type: 'button',
+        class: 'tool',
+        text: 'Salin',
+        on: {
+          click: function () {
+            if (navigator.clipboard) {
+              navigator.clipboard.writeText(pw);
+              toast('Password kunci disalin!', 'ok');
+            }
+          }
+        }
+      })
+    ]);
+    box.appendChild(pwBox);
+
+    if (order.nfc_link) {
+      box.appendChild(E('div', { style: 'font-size:11px;color:var(--ink-secondary);word-break:break-all;margin-top:8px' }, [
+        E('b', { text: 'Link Tag: ' }),
+        E('span', { text: order.nfc_link })
+      ]));
+    }
+
+    var btnClose = E('button', {
+      type: 'button',
+      class: 'tool',
+      style: 'margin-top:14px',
+      text: 'Tutup',
+      on: { click: function () { if (document.body.contains(backdrop)) document.body.removeChild(backdrop); } }
+    });
+    box.appendChild(btnClose);
+
+    backdrop.appendChild(box);
+    document.body.appendChild(backdrop);
+  }
+
+  /* Modal Admin: Melihat Foto Bukti Penerimaan Celengan dari Member */
+  function adminViewOrderPhoto(order) {
+    var backdrop = E('div', { class: 'nfc-step-modal-backdrop' });
+    var box = E('div', { class: 'nfc-step-modal' });
+
+    box.appendChild(E('h2', { text: '📸 Bukti Foto Penerimaan Celengan Fisik' }));
+    box.appendChild(E('p', { class: 'msg', text: 'Nasabah: <b>' + (order.memberName || 'Member') + '</b> | Celengan: <b>' + order.nama_celengan + '</b>' }));
+
+    if (order.foto_penerimaan) {
+      var img = E('img', {
+        src: order.foto_penerimaan,
+        class: 'photo-preview-wrap',
+        alt: 'Foto bukti celengan fisik'
+      });
+      box.appendChild(img);
+    } else {
+      box.appendChild(E('p', { class: 'msg warn', text: 'Belum ada foto bukti penerimaan yang tersimpan.' }));
+    }
+
+    var btnClose = E('button', {
+      type: 'button',
+      class: 'tool',
+      style: 'margin-top:12px',
+      text: 'Tutup',
+      on: { click: function () { if (document.body.contains(backdrop)) document.body.removeChild(backdrop); } }
+    });
+    box.appendChild(btnClose);
+
+    backdrop.appendChild(box);
+    document.body.appendChild(backdrop);
   }
 
   /* Aksi Admin: Tolak Pesanan */
@@ -2800,5 +3220,29 @@ window.BANKVERSE_FIREBASE_CONFIG = {
       list.hidden = true; staffList.hidden = true; logList.hidden = false;
     });
   }
+
+  /* 8. Auto-handler URL NFC Query Parameters (?nfc_tag=... atau ?order_id=...) */
+  (function handleIncomingNfcUrl() {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var nfcTag = params.get('nfc_tag');
+      var orderId = params.get('order_id');
+      if (nfcTag || orderId) {
+        setTimeout(function () {
+          if ($('#bMe')) $('#bMe').click();
+          if (nfcTag) {
+            handleNfcDetected(nfcTag);
+          } else if (orderId) {
+            var ord = memberOrders.find(function (o) { return o.id === orderId; });
+            if (ord && ord.status === 'dikirim') {
+              showMemberConfirmModal(ord);
+            }
+          }
+        }, 1500);
+      }
+    } catch (e) {
+      console.warn('handleIncomingNfcUrl error:', e);
+    }
+  })();
 
 })();

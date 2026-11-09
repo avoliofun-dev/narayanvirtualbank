@@ -1919,3 +1919,177 @@ button {
   background: var(--brand-blue-subtle);
   border-color: var(--brand-blue);
 }
+
+/* ==============================================================================
+   NFC MULTI-STEP WRITING, AUTO-LINK, PASSWORD LOCK & PHOTO CONFIRMATION
+   ============================================================================== */
+.nfc-step-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 16px;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.nfc-step-modal {
+  background: var(--surface-glass-solid);
+  border: 1.5px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  max-width: 520px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+}
+
+.nfc-stepper {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 12px 0 6px;
+}
+
+.nfc-step-item {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.nfc-step-num {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-full);
+  background: var(--surface-hover);
+  border: 1px solid var(--surface-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--ink-secondary);
+  transition: all var(--anim-normal);
+}
+
+.nfc-step-item.active .nfc-step-num {
+  background: var(--brand-blue);
+  color: #fff;
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.4);
+}
+
+.nfc-step-item.completed .nfc-step-num {
+  background: var(--success);
+  color: #fff;
+  border-color: var(--success);
+}
+
+.nfc-step-item.active span,
+.nfc-step-item.completed span {
+  color: var(--ink-primary);
+}
+
+.nfc-radar-stage {
+  text-align: center;
+  padding: 24px 16px;
+  background: var(--surface-hover);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--surface-border);
+  position: relative;
+  overflow: hidden;
+}
+
+.nfc-pulse-radar {
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 12px;
+  border-radius: var(--radius-full);
+  background: var(--brand-blue-subtle);
+  border: 2px solid var(--brand-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  position: relative;
+  animation: nfcRadarGlow 2s infinite ease-in-out;
+}
+
+.nfc-pulse-radar::after {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--brand-blue);
+  opacity: 0.7;
+  animation: nfcRadarWave 2s infinite linear;
+}
+
+@keyframes nfcRadarGlow {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); }
+  50% { transform: scale(1.04); box-shadow: 0 0 20px 4px rgba(37, 99, 235, 0.25); }
+}
+
+@keyframes nfcRadarWave {
+  0% { transform: scale(0.85); opacity: 0.9; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+.nfc-progress-track {
+  width: 100%;
+  height: 8px;
+  background: var(--surface-border);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin: 12px 0 6px;
+}
+
+.nfc-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand-blue), #38bdf8);
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease-out;
+}
+
+.nfc-password-box {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid var(--brand-gold);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.nfc-password-code {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 1.5px;
+  color: var(--brand-gold);
+}
+
+.photo-preview-wrap {
+  width: 100%;
+  max-height: 200px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--surface-border);
+  object-fit: cover;
+  margin-top: 8px;
+  display: block;
+}
+
