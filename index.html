@@ -266,7 +266,28 @@
 <!-- Modal Bantuan & Kebijakan Privasi -->
 <div class="modal" id="helpModal" hidden role="dialog" aria-modal="true" aria-label="Bantuan dan Kebijakan"><div class="mcard" id="helpBody"></div></div>
 
-<!-- Modal Akun Anggota (Supabase Auth & Transaksi) -->
+  <!-- Modal Profil Lengkap (hidden by default) -->
+  <div class="modal" id="profileModal" hidden role="dialog" aria-modal="true" aria-label="Lengkapi Profil Member">
+    <div class="modal-card">
+      <h3>Lengkapi Profil Anda</h3>
+      <form id="profileForm">
+        <label>Nama Lengkap
+          <input type="text" name="displayName" required />
+        </label>
+        <label>No. HP (minimal 8 digit)
+          <input type="tel" name="no_hp" pattern="\d{8,}" required />
+        </label>
+        <label>Alamat Lengkap
+          <textarea name="alamat_lengkap" rows="3" required></textarea>
+        </label>
+        <div class="modal-actions" style="margin-top:12px;text-align:right;">
+          <button type="button" id="profileCancel" class="tool">Batal</button>
+          <button type="submit" class="tool">Simpan Profil</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
 <div class="modal" id="authModal" hidden role="dialog" aria-modal="true" aria-label="Akun Anggota"><div class="mcard" id="authBody"></div></div>
 
 <!-- Modal Asisten Virtual Ava (Alur Buka Tabungan) -->
