@@ -2,13 +2,26 @@
 -- MIGRASI: PENULISAN TAG NFC BERTAHAP, LINK OTOMATIS, PASSWORD KUNCI & BUKTI FOTO
 -- ==============================================================================
 
--- 1. Tambah kolom pendukung pada tabel public.orders
+-- 1. Tambah kolom pendukung pada tabel public.orders jika belum ada
 ALTER TABLE public.orders
   ADD COLUMN IF NOT EXISTS nfc_link TEXT,
   ADD COLUMN IF NOT EXISTS nfc_password TEXT,
   ADD COLUMN IF NOT EXISTS foto_penerimaan TEXT;
 
--- 2. Update fungsi process_order untuk mendukung penyimpanan link NFC dan password kunci
+-- ==============================================================================
+-- 2. HAPUS VERSI FUNGSI LAMA AGAR TIDAK TERJADI AMBIGUITAS OVERLOAD FUNCTION
+--    Error: "Could not choose the best candidate function"
+-- ==============================================================================
+DROP FUNCTION IF EXISTS public.process_order(uuid, text, text, text);
+DROP FUNCTION IF EXISTS public.process_order(uuid, text, text, text, text, text);
+DROP FUNCTION IF EXISTS public.process_order(uuid, text);
+
+DROP FUNCTION IF EXISTS public.confirm_order_received(uuid);
+DROP FUNCTION IF EXISTS public.confirm_order_received(uuid, text);
+
+-- ==============================================================================
+-- 3. BUAT SATU FUNGSI PROCESS_ORDER TUNGGAL YANG BERSIH DENGAN 6 PARAMETER
+-- ==============================================================================
 CREATE OR REPLACE FUNCTION public.process_order(
   p_order_id UUID,
   p_status TEXT,
@@ -91,7 +104,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3. Update fungsi confirm_order_received untuk mendukung penyimpanan bukti foto celengan
+-- ==============================================================================
+-- 4. BUAT SATU FUNGSI CONFIRM_ORDER_RECEIVED TUNGGAL DENGAN FOTO BUKTI
+-- ==============================================================================
 CREATE OR REPLACE FUNCTION public.confirm_order_received(
   p_order_id UUID,
   p_foto_penerimaan TEXT DEFAULT NULL
@@ -127,4 +142,3 @@ BEGIN
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-

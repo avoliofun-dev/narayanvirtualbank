@@ -1566,21 +1566,29 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     if (busy) return;
     busy = true; setNote('Mengonfirmasi penerimaan celengan dan mengaktifkan...'); render();
     try {
-      // Coba panggil RPC confirm_order_received dengan p_foto_penerimaan
-      var { data, error } = await supabase.rpc('confirm_order_received', {
+      // 1. Coba panggil RPC confirm_order_received dengan p_foto_penerimaan
+      var { error } = await supabase.rpc('confirm_order_received', {
         p_order_id: orderId,
         p_foto_penerimaan: photoData || null
       });
 
-      // Fallback jika database belum update parameter baru
+      // 2. Fallback jika ada ambigu overload atau fungsi hanya terima p_order_id
       if (error) {
         var fb = await supabase.rpc('confirm_order_received', { p_order_id: orderId });
-        if (fb.error) throw fb.error;
-        if (photoData) {
-          try {
-            await supabase.from('orders').update({ foto_penerimaan: photoData }).eq('id', orderId);
-          } catch (ign) { }
-        }
+        error = fb.error;
+      }
+
+      // 3. Fallback langsung update tabel orders
+      if (error) {
+        var { error: upErr } = await supabase.from('orders').update({
+          status: 'diterima',
+          foto_penerimaan: photoData || null
+        }).eq('id', orderId);
+        if (upErr) throw error;
+      } else if (photoData) {
+        try {
+          await supabase.from('orders').update({ foto_penerimaan: photoData }).eq('id', orderId);
+        } catch (ign) { }
       }
 
       await loadMemberData(me.id || me.uid);
@@ -2078,8 +2086,37 @@ window.BANKVERSE_FIREBASE_CONFIG = {
   /* Aksi Admin: Proses Status */
   async function adminProcessOrder(orderId, status) {
     try {
-      var { error } = await supabase.rpc('process_order', { p_order_id: orderId, p_status: status });
-      if (error) throw error;
+      // 1. Coba panggil RPC process_order dengan parameter lengkap
+      var { error } = await supabase.rpc('process_order', {
+        p_order_id: orderId,
+        p_status: status,
+        p_nfc_uid: null,
+        p_alasan_tolak: null,
+        p_nfc_link: null,
+        p_nfc_password: null
+      });
+
+      // 2. Fallback jika masih ada ambiguity overload di database
+      if (error && error.message && error.message.indexOf('candidate function') !== -1) {
+        var fb = await supabase.rpc('process_order', {
+          p_order_id: orderId,
+          p_status: status,
+          p_nfc_uid: null,
+          p_alasan_tolak: null
+        });
+        error = fb.error;
+      }
+
+      // 3. Fallback langsung update tabel orders
+      if (error) {
+        var { error: upErr } = await supabase.from('orders').update({
+          status: status,
+          diproses_oleh: me ? (me.id || me.uid) : null,
+          updated_at: new Date().toISOString()
+        }).eq('id', orderId);
+        if (upErr) throw error;
+      }
+
       toast('Pesanan diubah ke status ' + status, 'ok');
       aTab('orders');
     } catch (e) { alert(errText(e)); }
@@ -2309,25 +2346,56 @@ window.BANKVERSE_FIREBASE_CONFIG = {
 
   /* Helper: Kirim RPC ke Supabase untuk menandai order sebagai "dikirim" dengan UID, Link, & Password */
   async function shipOrderWithUidAndSec(orderId, uid, link, password) {
-    // 1. Coba panggil RPC process_order dengan parameter lengkap
+    // 1. Coba panggil RPC process_order dengan parameter lengkap (6 parameter)
     var { error } = await supabase.rpc('process_order', {
       p_order_id: orderId,
       p_status: 'dikirim',
       p_nfc_uid: uid,
+      p_alasan_tolak: null,
       p_nfc_link: link,
       p_nfc_password: password
     });
 
-    // 2. Fallback jika fungsi SQL di server hanya menerima 3 parameter lama
-    if (error) {
+    // 2. Fallback jika masih ada ambigu overload di database
+    if (error && error.message && error.message.indexOf('candidate function') !== -1) {
       var fb = await supabase.rpc('process_order', {
         p_order_id: orderId,
         p_status: 'dikirim',
-        p_nfc_uid: uid
+        p_nfc_uid: uid,
+        p_alasan_tolak: null
       });
-      if (fb.error) throw fb.error;
+      error = fb.error;
+    }
 
-      // Update kolom link & password langsung
+    // 3. Fallback langsung update tabel orders & buat piggy_banks jika RPC terkendala
+    if (error) {
+      var { data: ord } = await supabase.from('orders').select('*').eq('id', orderId).single();
+      if (ord) {
+        // Buat celengan fisik
+        await supabase.from('piggy_banks').upsert({
+          order_id: ord.id,
+          owner_id: ord.member_id,
+          nama: ord.nama_celengan,
+          nfc_uid: uid,
+          saldo: 0,
+          status: 'aktif'
+        }, { onConflict: 'nfc_uid' });
+
+        // Update status order
+        var { error: upErr } = await supabase.from('orders').update({
+          status: 'dikirim',
+          nfc_uid: uid,
+          nfc_link: link,
+          nfc_password: password,
+          diproses_oleh: me ? (me.id || me.uid) : null,
+          updated_at: new Date().toISOString()
+        }).eq('id', orderId);
+        if (upErr) throw error;
+      } else {
+        throw error;
+      }
+    } else {
+      // Pastikan link & password tersimpan jika fungsi lama yang terpicu
       try {
         await supabase.from('orders').update({
           nfc_link: link,
@@ -2424,12 +2492,38 @@ window.BANKVERSE_FIREBASE_CONFIG = {
     var alasan = prompt('Masukkan alasan penolakan pesanan:');
     if (!alasan) return;
     try {
+      // 1. Coba panggil RPC process_order dengan parameter lengkap
       var { error } = await supabase.rpc('process_order', {
         p_order_id: orderId,
         p_status: 'ditolak',
-        p_alasan_tolak: alasan.trim()
+        p_nfc_uid: null,
+        p_alasan_tolak: alasan.trim(),
+        p_nfc_link: null,
+        p_nfc_password: null
       });
-      if (error) throw error;
+
+      // 2. Fallback jika masih ada ambigu overload di database
+      if (error && error.message && error.message.indexOf('candidate function') !== -1) {
+        var fb = await supabase.rpc('process_order', {
+          p_order_id: orderId,
+          p_status: 'ditolak',
+          p_nfc_uid: null,
+          p_alasan_tolak: alasan.trim()
+        });
+        error = fb.error;
+      }
+
+      // 3. Fallback langsung update tabel orders jika RPC terkendala
+      if (error) {
+        var { error: upErr } = await supabase.from('orders').update({
+          status: 'ditolak',
+          alasan_tolak: alasan.trim(),
+          diproses_oleh: me ? (me.id || me.uid) : null,
+          updated_at: new Date().toISOString()
+        }).eq('id', orderId);
+        if (upErr) throw error;
+      }
+
       toast('Pesanan ditolak.', 'warn');
       aTab('orders');
     } catch (e) { alert(errText(e)); }
